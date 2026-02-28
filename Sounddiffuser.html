@@ -3,46 +3,51 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fixed AR Sound Diffuser</title>
+    <title>Pro Sound Diffuser - AR Fixed</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <style>
         body { margin: 0; font-family: sans-serif; height: 100vh; display: flex; flex-direction: column; background: #000; color: #fff; overflow: hidden; }
-        #canvas-container { flex: 1; position: relative; }
+        #canvas-container { flex: 1; position: relative; background: radial-gradient(#333, #000); }
         #controls { height: 40%; overflow-y: auto; padding: 15px; background: #1a1a1a; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; border-top: 2px solid #333; }
         .group { background: #222; padding: 10px; border-radius: 8px; }
-        input, select { width: 100%; padding: 8px; margin: 5px 0; background: #333; border: 1px solid #444; color: #fff; border-radius: 4px; }
+        input { width: 100%; padding: 8px; margin: 5px 0; background: #333; border: 1px solid #444; color: #fff; border-radius: 4px; box-sizing: border-box;}
         .btn { background: #007bff; border: none; color: white; padding: 12px; border-radius: 5px; cursor: pointer; width: 100%; font-weight: bold; }
-        #ar-overlay { position: absolute; bottom: 20px; width: 100%; text-align: center; pointer-events: none; display: none; z-index: 100; }
+        
+        /* AR UI */
+        #ar-ui { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; pointer-events: none; z-index: 1000; }
+        #ar-instructions { position: absolute; top: 20%; width: 100%; text-align: center; background: rgba(0,0,0,0.5); padding: 10px 0; }
+        #close-ar { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); pointer-events: auto; background: #ff4444; padding: 15px 30px; border-radius: 30px; display: block; }
         .depth-row { display: flex; gap: 5px; }
     </style>
 </head>
 <body>
 
 <div id="canvas-container">
-    <div id="ar-overlay">Point at a wall and tap to place</div>
+    <div id="ar-ui">
+        <div id="ar-instructions">Scan a wall until the green circle appears, then tap to lock.</div>
+        <button id="close-ar" class="btn">CLOSE AR</button>
+    </div>
 </div>
 
 <div id="controls">
     <div class="group">
-        <h3>Dimensions (Inches)</h3>
+        <h3>Size (Inches)</h3>
         <label>Width</label><input type="number" id="width" value="48" oninput="updateModel()">
         <label>Height</label><input type="number" id="height" value="24" oninput="updateModel()">
         <label>Block Size</label><input type="number" id="blockSize" value="2" oninput="updateModel()">
     </div>
     <div class="group">
         <h3>Depths & Weights</h3>
-        <div id="depth-list">
-            <div class="depth-row">
-                <input type="number" class="depth-val" value="1" oninput="updateModel()">
-                <input type="number" class="depth-weight" value="50" oninput="updateModel()">
-            </div>
-            <div class="depth-row">
-                <input type="number" class="depth-val" value="5" oninput="updateModel()">
-                <input type="number" class="depth-weight" value="50" oninput="updateModel()">
-            </div>
+        <div class="depth-row">
+            <input type="number" class="depth-val" value="1" oninput="updateModel()">
+            <input type="number" class="depth-weight" value="50" oninput="updateModel()">
         </div>
-        <button id="ar-launch" class="btn" style="background:#e91e63; margin-top:10px;">START AR VIEW</button>
+        <div class="depth-row">
+            <input type="number" class="depth-val" value="5" oninput="updateModel()">
+            <input type="number" class="depth-weight" value="50" oninput="updateModel()">
+        </div>
+        <button id="ar-launch" class="btn" style="background:#e91e63; margin-top:10px;">ENTER AR VIEW</button>
     </div>
 </div>
 
@@ -50,63 +55,71 @@
     let scene, camera, renderer, controls, diffuserGroup, reticle;
     let hitTestSource = null;
     let hitTestSourceRequested = false;
-    let colors = ['#ffffff', '#444444'];
+    let isPlaced = false;
+    let colors = ['#ffffff', '#666666'];
 
     init();
 
     function init() {
         scene = new THREE.Scene();
         camera = new THREE.PerspectiveCamera(70, window.innerWidth / (window.innerHeight * 0.6), 0.01, 1000);
-        camera.position.z = 60;
-
+        
         renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setSize(window.innerWidth, window.innerHeight * 0.6);
         renderer.xr.enabled = true;
         document.getElementById('canvas-container').appendChild(renderer.domElement);
 
         controls = new THREE.OrbitControls(camera, renderer.domElement);
-        
-        const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
+        camera.position.z = 60;
+
+        scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1));
+        const light = new THREE.DirectionalLight(0xffffff, 0.8);
+        light.position.set(10, 20, 10);
         scene.add(light);
-        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        dirLight.position.set(10, 20, 10);
-        scene.add(dirLight);
 
         diffuserGroup = new THREE.Group();
         scene.add(diffuserGroup);
 
-        // AR Reticle (The "Placement Ring")
+        // Green Reticle for placement
         reticle = new THREE.Mesh(
             new THREE.RingGeometry(2, 2.5, 32).rotateX(-Math.PI / 2),
             new THREE.MeshBasicMaterial({ color: 0x00ff00 })
         );
-        reticle.visible = false;
         reticle.matrixAutoUpdate = false;
+        reticle.visible = false;
         scene.add(reticle);
 
         updateModel();
         animate();
 
         document.getElementById('ar-launch').addEventListener('click', startAR);
+        document.getElementById('close-ar').addEventListener('click', endAR);
     }
 
     async function startAR() {
-        const sessionInit = { requiredFeatures: ['hit-test'], optionalFeatures: ['dom-overlay'], domOverlay: { root: document.body } };
-        const session = await navigator.xr.requestSession('immersive-ar', sessionInit);
+        const session = await navigator.xr.requestSession('immersive-ar', {
+            requiredFeatures: ['hit-test'],
+            optionalFeatures: ['dom-overlay'],
+            domOverlay: { root: document.getElementById('ar-ui') }
+        });
         
         renderer.xr.setSession(session);
-        document.getElementById('ar-overlay').style.display = 'block';
+        document.getElementById('ar-ui').style.display = 'block';
+        isPlaced = false;
 
         session.addEventListener('select', () => {
             if (reticle.visible) {
-                // Place a copy of the diffuser at the reticle position
-                const placedDiffuser = diffuserGroup.clone();
-                reticle.matrix.decompose(placedDiffuser.position, placedDiffuser.quaternion, placedDiffuser.scale);
-                // Rotate to face wall (adjust if needed)
-                placedDiffuser.rotation.x = Math.PI / 2; 
-                scene.add(placedDiffuser);
+                isPlaced = true;
+                document.getElementById('ar-instructions').innerText = "Locked! Use the button below to exit.";
             }
         });
+    }
+
+    function endAR() {
+        renderer.xr.getSession().end();
+        document.getElementById('ar-ui').style.display = 'none';
+        isPlaced = false;
+        reticle.visible = false;
     }
 
     function updateModel() {
@@ -115,22 +128,22 @@
         const W = parseFloat(document.getElementById('width').value);
         const H = parseFloat(document.getElementById('height').value);
         const B = parseFloat(document.getElementById('blockSize').value);
-        const dVals = Array.from(document.querySelectorAll('.depth-val')).map(i => parseFloat(i.value));
-        const dWeights = Array.from(document.querySelectorAll('.depth-weight')).map(i => parseFloat(i.value));
+        const dVals = Array.from(document.querySelectorAll('.depth-val')).map(v => parseFloat(v.value));
+        const dWeights = Array.from(document.querySelectorAll('.depth-weight')).map(v => parseFloat(v.value));
 
-        const geometry = new THREE.BoxGeometry(B * 0.95, B * 0.95, 1);
+        const geo = new THREE.BoxGeometry(B * 0.95, B * 0.95, 1);
 
         for(let r=0; r < Math.floor(H/B); r++) {
             for(let c=0; c < Math.floor(W/B); c++) {
                 const rand = Math.random() * 100;
                 let cum = 0, depth = dVals[0];
-                for(let i=0; i<dWeights.length; i++){
+                for(let i=0; i<dWeights.length; i++) {
                     cum += dWeights[i];
                     if(rand <= cum) { depth = dVals[i]; break; }
                 }
 
-                const mat = new THREE.MeshStandardMaterial({ color: colors[(r+c)%colors.length] });
-                const mesh = new THREE.Mesh(geometry, mat);
+                const mat = new THREE.MeshStandardMaterial({ color: colors[(r+c)%2] });
+                const mesh = new THREE.Mesh(geo, mat);
                 mesh.position.set((c*B)-(W/2), (r*B)-(H/2), depth/2);
                 mesh.scale.z = depth;
                 diffuserGroup.add(mesh);
@@ -144,30 +157,31 @@
 
     function render(timestamp, frame) {
         if (frame) {
-            const referenceSpace = renderer.xr.getReferenceSpace();
             const session = renderer.xr.getSession();
+            const referenceSpace = renderer.xr.getReferenceSpace();
 
-            if (hitTestSourceRequested === false) {
-                session.requestReferenceSpace('viewer').then((referenceSpace) => {
-                    session.requestHitTestSource({ space: referenceSpace }).then((source) => {
+            if (!hitTestSourceRequested) {
+                session.requestReferenceSpace('viewer').then(space => {
+                    session.requestHitTestSource({ space: space }).then(source => {
                         hitTestSource = source;
                     });
-                });
-                session.addEventListener('end', () => {
-                    hitTestSourceRequested = false;
-                    hitTestSource = null;
                 });
                 hitTestSourceRequested = true;
             }
 
-            if (hitTestSource) {
-                const hitTestResults = frame.getHitTestResults(hitTestSource);
-                if (hitTestResults.length) {
-                    const hit = hitTestResults[0];
+            if (hitTestSource && !isPlaced) {
+                const hitResults = frame.getHitTestResults(hitTestSource);
+                if (hitResults.length > 0) {
+                    const hit = hitResults[0];
+                    const pose = hit.getPose(referenceSpace);
                     reticle.visible = true;
-                    reticle.matrix.fromArray(hit.getPose(referenceSpace).transform.matrix);
-                } else {
-                    reticle.visible = false;
+                    reticle.matrix.fromArray(pose.transform.matrix);
+                    
+                    // Diffuser follows the reticle
+                    diffuserGroup.position.setFromMatrixPosition(reticle.matrix);
+                    diffuserGroup.quaternion.setFromRotationMatrix(new THREE.Matrix4().extractRotation(reticle.matrix));
+                    // Rotate to face the wall (upright)
+                    diffuserGroup.rotateX(Math.PI / 2);
                 }
             }
         }
@@ -176,4 +190,3 @@
 </script>
 </body>
 </html>
-
