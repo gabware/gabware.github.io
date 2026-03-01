@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { ARButton } from 'three/addons/webxr/ARButton.js';
 
 class DiffuserConfigurator {
     constructor() {
@@ -9,6 +8,10 @@ class DiffuserConfigurator {
         this.renderer = null;
         this.controls = null;
         this.blocks = new THREE.Group();
+        
+        // Performance: Reuse Geometries
+        this.boxGeo = new THREE.BoxGeometry(1, 1, 1);
+        this.edgeGeo = new THREE.EdgesGeometry(this.boxGeo);
         
         this.config = {
             overallWidth: 48,
@@ -49,6 +52,8 @@ class DiffuserConfigurator {
         this.updateGrid();
         this.generateLayout();
         this.renderDiffuser();
+        
+        // Correct Animation Loop for WebXR/Standard
         this.renderer.setAnimationLoop(() => this.animate());
     }
 
@@ -80,15 +85,12 @@ class DiffuserConfigurator {
         this.scene.add(this.blocks);
         window.addEventListener('resize', () => this.onWindowResize());
 
-        // AR Session management
         this.renderer.xr.addEventListener('sessionstart', () => {
             this.isAR = true;
             this.scene.background = null;
-            // Inches to Meters conversion (1 inch = 0.0254 meters)
             this.blocks.scale.setScalar(0.0254);
-            // Move it 1.5 meters in front of the camera
             this.blocks.position.set(0, 0, -1.5);
-            this.blocks.rotation.x = Math.PI / 2; // Flat on the wall
+            this.blocks.rotation.x = Math.PI / 2;
         });
 
         this.renderer.xr.addEventListener('sessionend', () => {
@@ -101,146 +103,104 @@ class DiffuserConfigurator {
     }
 
     initUI() {
-        // ... (Include shared dimension listeners here if not already present)
-
-        const setupARButton = (btnId) => {
-            const btn = document.getElementById(btnId);
-            if (!btn) return;
-            
-            // Initial check to grey out the button if we ALREADY know XR isn't there
-            if (!navigator.xr) {
-                btn.classList.add('disabled-look');
-            } else {
-                navigator.xr.isSessionSupported('immersive-ar').then(supported => {
-                    if (!supported) btn.classList.add('disabled-look');
-                });
-            }
-
-            btn.addEventListener('click', (e) => {
-                // Prevent event bubbling if one button is inside another or triggering multiple listeners
-                e.preventDefault();
-                e.stopPropagation();
-
-                if (navigator.xr) {
-                    navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
-                        if (supported) {
-                            this.renderer.xr.setReferenceSpaceType('local');
-                            navigator.xr.requestSession('immersive-ar', {
-                                optionalFeatures: ['dom-overlay'],
-                                domOverlay: { root: document.body }
-                            }).then((session) => {
-                                this.renderer.xr.setSession(session);
-                            });
-                        } else {
-                            alert("AR is not supported on this device or browser.\n\nNote: iOS requires a WebXR-compatible browser (like 'WebXR Viewer') or ensuring you are on a secure HTTPS connection.");
-                        }
-                    });
-                } else {
-                    alert("WebXR is not available.\n\nTo use AR, please ensure you are using a modern browser and a secure (HTTPS) connection.");
-                }
-            });
-        };
-
-        // Note: btn-ar-mobile is just a tab button that triggers the same logic
-        setupARButton('btn-ar');
-        setupARButton('btn-ar-mobile');
-
-        // (Include all other shared dimension listeners, layout selectors, etc. here)
-
-        // Layout Selectors
-        document.getElementById('layout-type').addEventListener('change', (e) => {
-            this.saveToHistory();
-            this.config.layoutType = e.target.value;
-            this.updateLayoutUI();
-            this.generateLayout();
-            this.renderDiffuser();
-        });
-
-        document.getElementById('color-layout-type').addEventListener('change', (e) => {
-            this.saveToHistory();
-            this.config.colorLayoutType = e.target.value;
-            this.updateLayoutUI();
-            this.generateLayout();
-            this.renderDiffuser();
-        });
-
-        document.getElementById('sync-color-layout').addEventListener('change', (e) => {
-            this.saveToHistory();
-            this.config.syncColorLayout = e.target.checked;
-            this.generateLayout();
-            this.renderDiffuser();
-        });
-
-        // Layer Adding
-        document.getElementById('add-wave-layer').addEventListener('click', () => { this.saveToHistory(); this.config.waveLayers.push({ angle: 0, amplitude: 2, frequency: 12 }); this.renderLayersUI(); this.generateLayout(); this.renderDiffuser(); });
-        document.getElementById('add-ripple-layer').addEventListener('click', () => { this.saveToHistory(); this.config.rippleLayers.push({ x: 0.5, y: 0.5, amplitude: 2, frequency: 10 }); this.renderLayersUI(); this.generateLayout(); this.renderDiffuser(); });
-        document.getElementById('add-color-wave-layer').addEventListener('click', () => { this.saveToHistory(); this.config.colorWaveLayers.push({ angle: 0, amplitude: 1, frequency: 12 }); this.renderLayersUI(); this.generateLayout(); this.renderDiffuser(); });
-        document.getElementById('add-color-ripple-layer').addEventListener('click', () => { this.saveToHistory(); this.config.colorRippleLayers.push({ x: 0.5, y: 0.5, amplitude: 1, frequency: 10 }); this.renderLayersUI(); this.generateLayout(); this.renderDiffuser(); });
-
-        // Constraints
-        ['wave-minDepth', 'wave-maxDepth', 'wave-depthStep', 'ripple-minDepth', 'ripple-maxDepth', 'ripple-depthStep'].forEach(id => {
-            document.getElementById(id).addEventListener('input', (e) => {
-                const parts = id.split('-');
-                const section = parts[0] + 'Constraints';
-                const key = parts[1];
-                this.config[section][key] = parseFloat(e.target.value) || 0;
+        ['overall-width', 'overall-height', 'block-size'].forEach(id => {
+            const el = document.getElementById(id);
+            el.addEventListener('mousedown', () => this.saveToHistory());
+            el.addEventListener('input', (e) => {
+                const key = id === 'overall-width' ? 'overallWidth' : (id === 'overall-height' ? 'overallHeight' : 'blockSize');
+                this.config[key] = parseFloat(e.target.value) || 1;
+                this.updateGrid();
                 this.generateLayout();
                 this.renderDiffuser();
             });
         });
 
-        // Rest of the existing UI setup...
+        const setupARButton = (btnId) => {
+            const btn = document.getElementById(btnId);
+            if (!btn) return;
+            if (!navigator.xr) btn.classList.add('disabled-look');
+            else navigator.xr.isSessionSupported('immersive-ar').then(s => { if(!s) btn.classList.add('disabled-look'); });
+
+            btn.addEventListener('click', (e) => {
+                e.preventDefault(); e.stopPropagation();
+                if (navigator.xr) {
+                    navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
+                        if (supported) {
+                            this.renderer.xr.setReferenceSpaceType('local');
+                            navigator.xr.requestSession('immersive-ar', { optionalFeatures: ['dom-overlay'], domOverlay: { root: document.body } })
+                                .then((session) => this.renderer.xr.setSession(session));
+                        } else {
+                            alert("AR not supported on this device/browser. iOS requires a WebXR-compatible app or HTTPS.");
+                        }
+                    });
+                } else {
+                    alert("WebXR unavailable. Use a modern browser and HTTPS.");
+                }
+            });
+        };
+        setupARButton('btn-ar');
+        setupARButton('btn-ar-mobile');
+
+        document.getElementById('layout-type').addEventListener('change', (e) => {
+            this.saveToHistory(); this.config.layoutType = e.target.value; this.updateLayoutUI(); this.generateLayout(); this.renderDiffuser();
+        });
+
+        document.getElementById('color-layout-type').addEventListener('change', (e) => {
+            this.saveToHistory(); this.config.colorLayoutType = e.target.value; this.updateLayoutUI(); this.generateLayout(); this.renderDiffuser();
+        });
+
+        document.getElementById('sync-color-layout').addEventListener('change', (e) => {
+            this.saveToHistory(); this.config.syncColorLayout = e.target.checked; this.generateLayout(); this.renderDiffuser();
+        });
+
+        ['wave-angle', 'wave-amplitude', 'wave-frequency', 'wave-minDepth', 'wave-maxDepth', 'wave-depthStep',
+         'ripple-x', 'ripple-y', 'ripple-amplitude', 'ripple-frequency', 'ripple-minDepth', 'ripple-maxDepth', 'ripple-depthStep'].forEach(id => {
+            document.getElementById(id).addEventListener('mousedown', () => this.saveToHistory());
+            document.getElementById(id).addEventListener('input', (e) => {
+                const parts = id.split('-'); this.config[parts[0]][parts[1]] = parseFloat(e.target.value) || 0;
+                this.generateLayout(); this.renderDiffuser();
+            });
+        });
+
+        ['color-wave-angle', 'color-wave-amplitude', 'color-wave-frequency', 'color-ripple-x', 'color-ripple-y', 'color-ripple-frequency'].forEach(id => {
+            document.getElementById(id).addEventListener('mousedown', () => this.saveToHistory());
+            document.getElementById(id).addEventListener('input', (e) => {
+                const parts = id.split('-'); const section = (parts[1] === 'wave') ? 'colorWave' : 'colorRipple';
+                this.config[section][parts[parts.length - 1]] = parseFloat(e.target.value) || 0;
+                this.generateLayout(); this.renderDiffuser();
+            });
+        });
+
         document.getElementById('bg-color-picker').addEventListener('input', (e) => {
-            this.config.backgroundColor = e.target.value;
-            this.scene.background.set(e.target.value);
+            this.config.backgroundColor = e.target.value; this.scene.background.set(e.target.value);
         });
 
         document.getElementById('add-block-config').addEventListener('click', () => { this.saveToHistory(); this.config.blockTypes.push({ depth: 1, percentage: 0 }); this.renderBlockTypesUI(); });
         document.getElementById('add-color-config').addEventListener('click', () => { this.saveToHistory(); this.config.colorTypes.push({ color: '#cccccc', percentage: 0 }); this.renderColorTypesUI(); });
-        document.getElementById('randomize-layout').addEventListener('click', () => { this.saveToHistory(); this.generateLayout(); this.renderDiffuser(); });
+        document.getElementById('randomize-layout').addEventListener('click', () => {
+            if (this.config.layoutType === 'random' && this.config.blockTypes.reduce((s, t) => s + t.percentage, 0) !== 100) return;
+            this.saveToHistory(); this.generateLayout(); this.renderDiffuser();
+        });
+
         document.getElementById('btn-undo').addEventListener('click', () => this.undo());
         window.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); this.undo(); } });
         document.getElementById('btn-export').addEventListener('click', () => this.exportJSON());
-
         document.getElementById('btn-load').addEventListener('click', () => document.getElementById('input-load').click());
         document.getElementById('input-load').addEventListener('change', (e) => this.loadJSON(e));
 
-        this.updateLayoutUI();
-        this.renderBlockTypesUI();
-        this.renderColorTypesUI();
-        this.renderLayersUI();
-        this.renderHistoryUI();
+        this.updateLayoutUI(); this.renderBlockTypesUI(); this.renderColorTypesUI(); this.renderLayersUI(); this.renderHistoryUI();
     }
 
     initMobileTabs() {
         const tabs = document.querySelectorAll('.tab-btn');
         const preview = document.getElementById('preview-container');
         const config = document.getElementById('configuration-panel');
-        const arBtnMobile = document.getElementById('btn-ar-mobile');
-        const arBtnDesktop = document.getElementById('btn-ar');
-
-        if (arBtnMobile && arBtnDesktop) {
-            arBtnMobile.addEventListener('click', () => arBtnDesktop.click());
-        }
-
         tabs.forEach(tab => {
             if (!tab.dataset.tab) return;
             tab.addEventListener('click', () => {
-                // Update buttons
-                tabs.forEach(t => t.classList.remove('active'));
-                tab.classList.add('active');
-
-                // Update sections
-                const target = tab.dataset.tab;
-                if (target === 'preview') {
-                    preview.classList.add('mobile-active');
-                    config.classList.remove('mobile-active');
-                    // Force three.js resize
-                    this.onWindowResize();
-                } else {
-                    preview.classList.remove('mobile-active');
-                    config.classList.add('mobile-active');
-                }
+                tabs.forEach(t => t.classList.remove('active')); tab.classList.add('active');
+                if (tab.dataset.tab === 'preview') { preview.classList.add('mobile-active'); config.classList.remove('mobile-active'); this.onWindowResize(); }
+                else { preview.classList.remove('mobile-active'); config.classList.add('mobile-active'); }
             });
         });
     }
@@ -250,47 +210,20 @@ class DiffuserConfigurator {
             const container = document.getElementById(containerId);
             container.innerHTML = '';
             layers.forEach((layer, idx) => {
-                const card = document.createElement('div');
-                card.className = 'config-card';
-                const grid = document.createElement('div');
-                grid.className = 'config-card-grid grid-4';
-                
-                let html = '';
-                if (type === 'wave') {
-                    html = `
-                        <div><label>Angle</label><input type="number" value="${layer.angle}" data-key="angle"></div>
-                        <div><label>Amp</label><input type="number" step="0.5" value="${layer.amplitude}" data-key="amplitude"></div>
-                        <div><label>Freq</label><input type="number" value="${layer.frequency}" data-key="frequency"></div>
-                    `;
-                } else {
-                    html = `
-                        <div><label>X/Y</label><div style="display:flex;gap:2px"><input type="number" step="0.1" value="${layer.x}" data-key="x" style="width:50%"><input type="number" step="0.1" value="${layer.y}" data-key="y" style="width:50%"></div></div>
-                        <div><label>Amp</label><input type="number" step="0.5" value="${layer.amplitude}" data-key="amplitude"></div>
-                        <div><label>Freq</label><input type="number" value="${layer.frequency}" data-key="frequency"></div>
-                    `;
-                }
-                grid.innerHTML = html + `<button class="btn-delete">×</button>`;
-                card.appendChild(grid);
-
+                const card = document.createElement('div'); card.className = 'config-card';
+                const grid = document.createElement('div'); grid.className = 'config-card-grid grid-4';
+                let html = type === 'wave' ? 
+                    `<div><label>Angle</label><input type="number" value="${layer.angle}" data-key="angle"></div><div><label>Amp</label><input type="number" step="0.5" value="${layer.amplitude}" data-key="amplitude"></div><div><label>Freq</label><input type="number" value="${layer.frequency}" data-key="frequency"></div>` :
+                    `<div><label>X/Y</label><div style="display:flex;gap:2px"><input type="number" step="0.1" value="${layer.x}" data-key="x" style="width:50%"><input type="number" step="0.1" value="${layer.y}" data-key="y" style="width:50%"></div></div><div><label>Amp</label><input type="number" step="0.5" value="${layer.amplitude}" data-key="amplitude"></div><div><label>Freq</label><input type="number" value="${layer.frequency}" data-key="frequency"></div>`;
+                grid.innerHTML = html + `<button class="btn-delete">×</button>`; card.appendChild(grid);
                 grid.querySelectorAll('input').forEach(input => {
                     input.addEventListener('mousedown', () => this.saveToHistory());
-                    input.addEventListener('input', (e) => {
-                        layer[e.target.dataset.key] = parseFloat(e.target.value) || 0;
-                        this.generateLayout();
-                        this.renderDiffuser();
-                    });
+                    input.addEventListener('input', (e) => { layer[e.target.dataset.key] = parseFloat(e.target.value) || 0; this.generateLayout(); this.renderDiffuser(); });
                 });
-                grid.querySelector('.btn-delete').addEventListener('click', () => {
-                    this.saveToHistory();
-                    layers.splice(idx, 1);
-                    this.renderLayersUI();
-                    this.generateLayout();
-                    this.renderDiffuser();
-                });
+                grid.querySelector('.btn-delete').addEventListener('click', () => { this.saveToHistory(); layers.splice(idx, 1); this.renderLayersUI(); this.generateLayout(); this.renderDiffuser(); });
                 container.appendChild(card);
             });
         };
-
         renderLayer('wave-layers-container', this.config.waveLayers, 'wave');
         renderLayer('ripple-layers-container', this.config.rippleLayers, 'ripple');
         renderLayer('color-wave-layers-container', this.config.colorWaveLayers, 'wave');
@@ -310,20 +243,13 @@ class DiffuserConfigurator {
     saveToHistory() {
         const state = JSON.stringify(this.config);
         if (this.history.length === 0 || this.history[this.history.length - 1] !== state) {
-            this.history.push(state);
-            if (this.history.length > 50) this.history.shift();
-            this.renderHistoryUI();
+            this.history.push(state); if (this.history.length > 50) this.history.shift(); this.renderHistoryUI();
         }
     }
 
     undo() {
         if (this.history.length > 0) {
-            this.config = JSON.parse(this.history.pop());
-            this.syncUI();
-            this.updateGrid();
-            this.generateLayout();
-            this.renderDiffuser();
-            this.renderHistoryUI();
+            this.config = JSON.parse(this.history.pop()); this.syncUI(); this.updateGrid(); this.renderDiffuser(); this.renderHistoryUI();
         }
     }
 
@@ -333,98 +259,56 @@ class DiffuserConfigurator {
         document.getElementById('block-size').value = this.config.blockSize;
         document.getElementById('bg-color-picker').value = this.config.backgroundColor;
         this.scene.background.set(this.config.backgroundColor);
-        
         ['wave', 'ripple'].forEach(s => {
             document.getElementById(`${s}-minDepth`).value = this.config[`${s}Constraints`].minDepth;
             document.getElementById(`${s}-maxDepth`).value = this.config[`${s}Constraints`].maxDepth;
             document.getElementById(`${s}-depthStep`).value = this.config[`${s}Constraints`].depthStep;
         });
-
-        this.updateLayoutUI();
-        this.renderBlockTypesUI();
-        this.renderColorTypesUI();
-        this.renderLayersUI();
+        this.updateLayoutUI(); this.renderBlockTypesUI(); this.renderColorTypesUI(); this.renderLayersUI();
     }
 
     renderHistoryUI() {
-        const undoBtn = document.getElementById('btn-undo');
-        if (undoBtn) undoBtn.disabled = this.history.length === 0;
+        const btn = document.getElementById('btn-undo'); if (btn) btn.disabled = this.history.length === 0;
     }
 
     renderBlockTypesUI() {
-        const container = document.getElementById('block-configs-container');
-        container.innerHTML = '';
-        let totalPercent = 0;
+        const container = document.getElementById('block-configs-container'); container.innerHTML = '';
         this.config.blockTypes.forEach((type, index) => {
-            totalPercent += type.percentage;
-            const row = document.createElement('div');
-            row.className = 'block-config-row';
-            row.innerHTML = `
-                <div><label>Depth</label><input type="number" step="0.25" value="${type.depth}" data-index="${index}" data-prop="depth"></div>
-                <div><label>%</label><input type="number" step="1" value="${type.percentage}" data-index="${index}" data-prop="percentage"></div>
-                <button class="btn-delete" data-index="${index}">×</button>
-            `;
+            const row = document.createElement('div'); row.className = 'block-config-row';
+            row.innerHTML = `<div><label>Depth</label><input type="number" step="0.25" value="${type.depth}" data-index="${index}" data-prop="depth"></div><div><label>%</label><input type="number" step="1" value="${type.percentage}" data-index="${index}" data-prop="percentage"></div><button class="btn-delete" data-index="${index}">×</button>`;
             row.querySelectorAll('input').forEach(input => {
                 input.addEventListener('mousedown', () => this.saveToHistory());
                 input.addEventListener('input', (e) => {
-                    const idx = parseInt(e.target.dataset.index);
-                    const prop = e.target.dataset.prop;
-                    this.config.blockTypes[idx][prop] = parseFloat(e.target.value) || 0;
-                    
-                    // Update validation message without re-rendering the whole list
-                    let currentTotal = this.config.blockTypes.reduce((sum, t) => sum + t.percentage, 0);
-                    document.getElementById('validation-message').textContent = 
-                        (this.config.layoutType === 'random' && currentTotal !== 100) ? `Total: ${currentTotal}% (Must be 100%)` : '';
+                    this.config.blockTypes[parseInt(e.target.dataset.index)][e.target.dataset.prop] = parseFloat(e.target.value) || 0;
+                    const total = this.config.blockTypes.reduce((s, t) => s + t.percentage, 0);
+                    document.getElementById('validation-message').textContent = (this.config.layoutType === 'random' && total !== 100) ? `Total: ${total}% (Must be 100%)` : '';
                 });
             });
-            row.querySelector('.btn-delete').addEventListener('click', (e) => {
-                this.saveToHistory();
-                this.config.blockTypes.splice(parseInt(e.target.dataset.index), 1);
-                this.renderBlockTypesUI();
-            });
+            row.querySelector('.btn-delete').addEventListener('click', (e) => { this.saveToHistory(); this.config.blockTypes.splice(parseInt(e.target.dataset.index), 1); this.renderBlockTypesUI(); });
             container.appendChild(row);
         });
-        document.getElementById('validation-message').textContent = (this.config.layoutType === 'random' && totalPercent !== 100) ? `Total: ${totalPercent}% (Must be 100%)` : '';
     }
 
     renderColorTypesUI() {
-        const container = document.getElementById('color-configs-container');
-        container.innerHTML = '';
-        let totalPercent = 0;
+        const container = document.getElementById('color-configs-container'); container.innerHTML = '';
         this.config.colorTypes.forEach((type, index) => {
-            totalPercent += type.percentage;
-            const row = document.createElement('div');
-            row.className = 'color-config-row';
-            row.innerHTML = `
-                <input type="color" value="${type.color}" data-index="${index}" data-prop="color">
-                <div><label>%</label><input type="number" step="1" value="${type.percentage}" data-index="${index}" data-prop="percentage"></div>
-                <button class="btn-delete" data-index="${index}">×</button>
-            `;
+            const row = document.createElement('div'); row.className = 'color-config-row';
+            row.innerHTML = `<input type="color" value="${type.color}" data-index="${index}" data-prop="color"><div><label>%</label><input type="number" step="1" value="${type.percentage}" data-index="${index}" data-prop="percentage"></div><button class="btn-delete" data-index="${index}">×</button>`;
             row.querySelectorAll('input').forEach(input => {
                 input.addEventListener('mousedown', () => this.saveToHistory());
                 input.addEventListener('input', (e) => {
-                    const idx = parseInt(e.target.dataset.index);
-                    const prop = e.target.dataset.prop;
+                    const idx = parseInt(e.target.dataset.index); const prop = e.target.dataset.prop;
                     this.config.colorTypes[idx][prop] = e.target.type === 'color' ? e.target.value : parseFloat(e.target.value) || 0;
-                    
-                    if (e.target.type === 'color') {
-                        this.renderDiffuser();
-                    } else {
-                        // Update color validation message
-                        let currentTotal = this.config.colorTypes.reduce((sum, t) => sum + t.percentage, 0);
-                        document.getElementById('color-validation-message').textContent = 
-                            (this.config.colorLayoutType === 'random' && !this.config.syncColorLayout && currentTotal !== 100) ? `Total: ${currentTotal}% (Must be 100%)` : '';
+                    if (e.target.type === 'color') this.renderDiffuser();
+                    else {
+                        const total = this.config.colorTypes.reduce((s, t) => s + t.percentage, 0);
+                        document.getElementById('color-validation-message').textContent = (this.config.colorLayoutType === 'random' && !this.config.syncColorLayout && total !== 100) ? `Total: ${total}% (Must be 100%)` : '';
                     }
                 });
             });
-            row.querySelector('.btn-delete').addEventListener('click', (e) => {
-                this.saveToHistory();
-                this.config.colorTypes.splice(parseInt(e.target.dataset.index), 1);
-                this.renderColorTypesUI();
-            });
+            row.querySelector('.btn-delete').addEventListener('click', (e) => { this.saveToHistory(); this.config.colorTypes.splice(parseInt(e.target.dataset.index), 1); this.renderColorTypesUI(); });
             container.appendChild(row);
         });
-        document.getElementById('color-validation-message').textContent = (this.config.colorLayoutType === 'random' && !this.config.syncColorLayout && totalPercent !== 100) ? `Total: ${totalPercent}% (Must be 100%)` : '';
     }
 
     updateGrid() {
@@ -442,37 +326,28 @@ class DiffuserConfigurator {
 
     generateLayout() {
         const totalBlocks = this.cols * this.rows;
-        
-        // 1. Depths
         let depths = [];
         if (this.config.layoutType === 'random') {
-            let pool = [];
-            this.config.blockTypes.forEach((type) => {
+            let pool = []; this.config.blockTypes.forEach((type) => {
                 const count = Math.round((type.percentage / 100) * totalBlocks);
                 for (let i = 0; i < count; i++) pool.push(type.depth);
             });
             while (pool.length < totalBlocks) pool.push(this.config.blockTypes[0]?.depth || 0);
             while (pool.length > totalBlocks) pool.pop();
-            for (let i = pool.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [pool[i], pool[j]] = [pool[j], pool[i]];
-            }
+            for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
             depths = pool;
         } else {
             const layers = this.config.layoutType === 'wave' ? this.config.waveLayers : this.config.rippleLayers;
             const constraints = this.config.layoutType === 'wave' ? this.config.waveConstraints : this.config.rippleConstraints;
             for (let i = 0; i < totalBlocks; i++) {
-                const col = i % this.cols;
-                const row = Math.floor(i / this.cols);
-                let totalAmp = 0;
-                layers.forEach(layer => {
+                const col = i % this.cols; const row = Math.floor(i / this.cols); let totalAmp = 0;
+                layers.forEach(l => {
                     if (this.config.layoutType === 'wave') {
-                        const rad = (layer.angle * Math.PI) / 180;
-                        const proj = col * Math.cos(rad) + row * Math.sin(rad);
-                        totalAmp += (layer.amplitude / 2) * (1 + Math.sin((2 * Math.PI * proj * this.config.blockSize) / layer.frequency));
+                        const rad = (l.angle * Math.PI) / 180; const proj = col * Math.cos(rad) + row * Math.sin(rad);
+                        totalAmp += (l.amplitude / 2) * (1 + Math.sin((2 * Math.PI * proj * this.config.blockSize) / l.frequency));
                     } else {
-                        const dist = Math.sqrt(Math.pow(col - layer.x * this.cols, 2) + Math.pow(row - layer.y * this.rows, 2));
-                        totalAmp += (layer.amplitude / 2) * (1 + Math.sin((2 * Math.PI * dist * this.config.blockSize) / layer.frequency));
+                        const dist = Math.sqrt(Math.pow(col - l.x * this.cols, 2) + Math.pow(row - l.y * this.rows, 2));
+                        totalAmp += (l.amplitude / 2) * (1 + Math.sin((2 * Math.PI * dist * this.config.blockSize) / l.frequency));
                     }
                 });
                 depths.push(this.constrainDepth(totalAmp, constraints));
@@ -480,7 +355,6 @@ class DiffuserConfigurator {
         }
         this.config.layout = depths;
 
-        // 2. Colors
         let colorLayout = [];
         if (this.config.syncColorLayout) {
             this.config.layout.forEach(depth => {
@@ -489,36 +363,28 @@ class DiffuserConfigurator {
                 colorLayout.push(colorType ? colorType.color : '#ffffff');
             });
         } else if (this.config.colorLayoutType === 'random') {
-            let pool = [];
-            this.config.colorTypes.forEach(type => {
+            let pool = []; this.config.colorTypes.forEach(type => {
                 const count = Math.round((type.percentage / 100) * totalBlocks);
                 for (let i = 0; i < count; i++) pool.push(type.color);
             });
             while (pool.length < totalBlocks) pool.push(this.config.colorTypes[0]?.color || '#ffffff');
             while (pool.length > totalBlocks) pool.pop();
-            for (let i = pool.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [pool[i], pool[j]] = [pool[j], pool[i]];
-            }
+            for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
             colorLayout = pool;
         } else {
             const layers = this.config.colorLayoutType === 'wave' ? this.config.colorWaveLayers : this.config.colorRippleLayers;
             for (let i = 0; i < totalBlocks; i++) {
-                const col = i % this.cols;
-                const row = Math.floor(i / this.cols);
-                let totalT = 0;
-                layers.forEach(layer => {
+                const col = i % this.cols; const row = Math.floor(i / this.cols); let totalT = 0;
+                layers.forEach(l => {
                     if (this.config.colorLayoutType === 'wave') {
-                        const rad = (layer.angle * Math.PI) / 180;
-                        const proj = col * Math.cos(rad) + row * Math.sin(rad);
-                        totalT += (0.5 + 0.5 * Math.sin((2 * Math.PI * proj * this.config.blockSize) / layer.frequency + layer.amplitude));
+                        const rad = (l.angle * Math.PI) / 180; const proj = col * Math.cos(rad) + row * Math.sin(rad);
+                        totalT += (0.5 + 0.5 * Math.sin((2 * Math.PI * proj * this.config.blockSize) / l.frequency + l.amplitude));
                     } else {
-                        const dist = Math.sqrt(Math.pow(col - layer.x * this.cols, 2) + Math.pow(row - layer.y * this.rows, 2));
-                        totalT += (0.5 + 0.5 * Math.sin((2 * Math.PI * dist * this.config.blockSize) / layer.frequency));
+                        const dist = Math.sqrt(Math.pow(col - l.x * this.cols, 2) + Math.pow(row - l.y * this.rows, 2));
+                        totalT += (0.5 + 0.5 * Math.sin((2 * Math.PI * dist * this.config.blockSize) / l.frequency));
                     }
                 });
-                const normT = (totalT / (layers.length || 1));
-                const colorIdx = Math.floor(normT * this.config.colorTypes.length);
+                const colorIdx = Math.floor((totalT / (layers.length || 1)) * this.config.colorTypes.length);
                 colorLayout.push(this.config.colorTypes[colorIdx % this.config.colorTypes.length]?.color || '#ffffff');
             }
         }
@@ -526,18 +392,33 @@ class DiffuserConfigurator {
     }
 
     renderDiffuser() {
-        while(this.blocks.children.length > 0) this.blocks.remove(this.blocks.children[0]);
+        while(this.blocks.children.length > 0) {
+            const child = this.blocks.children[0];
+            if(child.geometry && child.geometry !== this.boxGeo && child.geometry !== this.edgeGeo) child.geometry.dispose();
+            this.blocks.remove(child);
+        }
+        
         const { blockSize, layout, colorLayout } = this.config;
-        const geometry = new THREE.BoxGeometry(1, 1, 1);
         const actualWidth = this.cols * blockSize;
         const actualHeight = this.rows * blockSize;
+        
+        // Performance: Material Cache
+        const materialCache = {};
+
         layout.forEach((depth, index) => {
-            const material = new THREE.MeshStandardMaterial({ color: colorLayout[index], roughness: 0.7, metalness: 0.1 });
-            const mesh = new THREE.Mesh(geometry, material);
+            const color = colorLayout[index];
+            if (!materialCache[color]) {
+                materialCache[color] = new THREE.MeshStandardMaterial({ color: color, roughness: 0.7, metalness: 0.1 });
+            }
+            
+            const mesh = new THREE.Mesh(this.boxGeo, materialCache[color]);
             mesh.scale.set(blockSize, blockSize, depth);
             mesh.position.set((index % this.cols) * blockSize - actualWidth / 2 + blockSize / 2, -(Math.floor(index / this.cols) * blockSize) + actualHeight / 2 - blockSize / 2, depth / 2);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
             this.blocks.add(mesh);
-            const line = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), new THREE.LineBasicMaterial({ color: 0x000000, opacity: 0.1, transparent: true }));
+
+            const line = new THREE.LineSegments(this.edgeGeo, new THREE.LineBasicMaterial({ color: 0x000000, opacity: 0.1, transparent: true }));
             line.scale.copy(mesh.scale);
             line.position.copy(mesh.position);
             this.blocks.add(line);
@@ -545,30 +426,15 @@ class DiffuserConfigurator {
     }
 
     loadJSON(event) {
-        const file = event.target.files[0];
-        if (!file) return;
-
+        const file = event.target.files[0]; if (!file) return;
         const reader = new FileReader();
         reader.onload = (e) => {
             try {
-                this.saveToHistory();
-                const loadedData = JSON.parse(e.target.result);
-                
-                // Shallow validation: ensure basic keys exist
-                if (loadedData.blockSize && loadedData.blockTypes) {
-                    this.config = { ...this.config, ...loadedData };
-                    this.syncUI();
-                    this.updateGrid();
-                    this.generateLayout();
-                    this.renderDiffuser();
-                } else {
-                    alert("Invalid JSON format. This doesn't look like a diffuser configuration.");
-                }
-            } catch (err) {
-                console.error("Error parsing JSON:", err);
-                alert("Failed to load file. Error parsing JSON.");
-            }
-            // Reset the input so the same file can be loaded again if needed
+                this.saveToHistory(); const loaded = JSON.parse(e.target.result);
+                if (loaded.blockSize && (loaded.blockTypes || loaded.waveLayers)) {
+                    this.config = { ...this.config, ...loaded }; this.syncUI(); this.updateGrid(); this.generateLayout(); this.renderDiffuser();
+                } else { alert("Invalid JSON format."); }
+            } catch (err) { alert("Failed to load file."); }
             event.target.value = '';
         };
         reader.readAsText(file);
@@ -576,18 +442,14 @@ class DiffuserConfigurator {
 
     exportJSON() {
         const buildSheet = {};
-        this.config.layout.forEach((depth, index) => {
-            const color = this.config.colorLayout[index];
-            const key = `${color}_${depth}in`;
-            if (!buildSheet[key]) buildSheet[key] = { color: color, depth: depth, count: 0 };
-            buildSheet[key].count++;
+        this.config.layout.forEach((d, i) => {
+            const c = this.config.colorLayout[i]; const k = `${c}_${d}in`;
+            if (!buildSheet[k]) buildSheet[k] = { color: c, depth: d, count: 0 };
+            buildSheet[k].count++;
         });
-        const exportData = { ...this.config, metadata: { exportedAt: new Date().toISOString(), totalBlocks: this.config.layout.length, buildSheet: Object.values(buildSheet) } };
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
-        const a = document.createElement('a');
-        a.href = dataStr;
-        a.download = `diffuser-build-sheet-${Date.now()}.json`;
-        a.click();
+        const data = { ...this.config, metadata: { exportedAt: new Date().toISOString(), totalBlocks: this.config.layout.length, buildSheet: Object.values(buildSheet) } };
+        const a = document.createElement('a'); a.href = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
+        a.download = `diffuser-build-sheet-${Date.now()}.json`; a.click();
     }
 
     onWindowResize() {
@@ -598,7 +460,6 @@ class DiffuserConfigurator {
     }
 
     animate() {
-        requestAnimationFrame(() => this.animate());
         this.controls.update();
         this.renderer.render(this.scene, this.camera);
     }
