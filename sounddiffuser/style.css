@@ -222,11 +222,21 @@ button.secondary:hover:not(:disabled) { background-color: #219150; }
     border-color: var(--accent-color);
 }
 
-@media (max-width: 768px) {
-    #mobile-tabs {
-        display: flex;
-    }
+.tab-btn.highlight {
+    background: var(--accent-color);
+    border-color: #fff;
+    font-weight: bold;
+}
 
+.desktop-only {
+    display: inline-block;
+}
+
+@media (max-width: 768px) {
+    .desktop-only {
+        display: none !important;
+    }
+...
     main {
         grid-template-columns: 1fr;
         height: calc(100vh - 120px); /* Adjust for header + tabs */
