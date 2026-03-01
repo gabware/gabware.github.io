@@ -43,6 +43,7 @@ class DiffuserConfigurator {
 
         this.initThree();
         this.initUI();
+        this.initMobileTabs();
         this.updateGrid();
         this.generateLayout();
         this.renderDiffuser();
@@ -85,6 +86,7 @@ class DiffuserConfigurator {
                 this.updateGrid();
                 this.generateLayout();
                 this.renderDiffuser();
+                // NOTE: We do NOT call renderBlockTypesUI or renderColorTypesUI here anymore
             });
         });
 
@@ -151,6 +153,32 @@ class DiffuserConfigurator {
         this.renderColorTypesUI();
         this.renderLayersUI();
         this.renderHistoryUI();
+    }
+
+    initMobileTabs() {
+        const tabs = document.querySelectorAll('.tab-btn');
+        const preview = document.getElementById('preview-container');
+        const config = document.getElementById('configuration-panel');
+
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                // Update buttons
+                tabs.forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+
+                // Update sections
+                const target = tab.dataset.tab;
+                if (target === 'preview') {
+                    preview.classList.add('mobile-active');
+                    config.classList.remove('mobile-active');
+                    // Force three.js resize
+                    this.onWindowResize();
+                } else {
+                    preview.classList.remove('mobile-active');
+                    config.classList.add('mobile-active');
+                }
+            });
+        });
     }
 
     renderLayersUI() {
@@ -275,8 +303,14 @@ class DiffuserConfigurator {
             row.querySelectorAll('input').forEach(input => {
                 input.addEventListener('mousedown', () => this.saveToHistory());
                 input.addEventListener('input', (e) => {
-                    this.config.blockTypes[parseInt(e.target.dataset.index)][e.target.dataset.prop] = parseFloat(e.target.value) || 0;
-                    this.renderBlockTypesUI();
+                    const idx = parseInt(e.target.dataset.index);
+                    const prop = e.target.dataset.prop;
+                    this.config.blockTypes[idx][prop] = parseFloat(e.target.value) || 0;
+                    
+                    // Update validation message without re-rendering the whole list
+                    let currentTotal = this.config.blockTypes.reduce((sum, t) => sum + t.percentage, 0);
+                    document.getElementById('validation-message').textContent = 
+                        (this.config.layoutType === 'random' && currentTotal !== 100) ? `Total: ${currentTotal}% (Must be 100%)` : '';
                 });
             });
             row.querySelector('.btn-delete').addEventListener('click', (e) => {
@@ -305,8 +339,18 @@ class DiffuserConfigurator {
             row.querySelectorAll('input').forEach(input => {
                 input.addEventListener('mousedown', () => this.saveToHistory());
                 input.addEventListener('input', (e) => {
-                    this.config.colorTypes[parseInt(e.target.dataset.index)][e.target.dataset.prop] = e.target.type === 'color' ? e.target.value : parseFloat(e.target.value) || 0;
-                    this.renderColorTypesUI();
+                    const idx = parseInt(e.target.dataset.index);
+                    const prop = e.target.dataset.prop;
+                    this.config.colorTypes[idx][prop] = e.target.type === 'color' ? e.target.value : parseFloat(e.target.value) || 0;
+                    
+                    if (e.target.type === 'color') {
+                        this.renderDiffuser();
+                    } else {
+                        // Update color validation message
+                        let currentTotal = this.config.colorTypes.reduce((sum, t) => sum + t.percentage, 0);
+                        document.getElementById('color-validation-message').textContent = 
+                            (this.config.colorLayoutType === 'random' && !this.config.syncColorLayout && currentTotal !== 100) ? `Total: ${currentTotal}% (Must be 100%)` : '';
+                    }
                 });
             });
             row.querySelector('.btn-delete').addEventListener('click', (e) => {

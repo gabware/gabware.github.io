@@ -5,17 +5,16 @@ A technical tool for designing and configuring acoustic diffusers with Random Sk
 
 ## Development Mandates
 - **Local Server Required:** This project uses ES Modules and Three.js. It **MUST** be served via a local web server (e.g., `python -m http.server`) to avoid CORS issues.
+- **PWA Ready:** Maintain `manifest.json` and `sw.js`. All core assets must be cached for offline functionality.
 - **Unit Precision:** All measurements MUST be in **inches**.
 - **Layout Patterns:**
     - **Random Skyline:** Block distribution MUST sum to 100% before the user can click "Generate".
-    - **Wave/Ripple:** Use sine functions for continuous depth calculation.
-- **Global Undo:** Every significant configuration change MUST be captured in the history stack.
-- **Three.js Usage:** Use the Import Map in `index.html` for modern, build-step-free development.
+    - **Wave/Ripple:** Supports multiple additive layers with Min/Max/Step constraints.
+- **Global Undo:** Every configuration change MUST be captured in the history stack (Ctrl+Z).
+- **Responsive Design:** Maintain the mobile tabbed layout for portrait orientations.
 
 ## Core Features
-- Overall Dimension Configuration (Width x Height).
-- Dynamic Block Type & Multi-Color Management.
-- Advanced Patterns (Wave, Ripple).
-- Professional 3D Preview (Studio Lighting, Soft Shadows, Custom Background).
-- Global Undo (Ctrl + Z).
-- Export/Load JSON configuration.
+- Multi-Layered Pattern Mixing (Additive Depths, Averaged Colors).
+- Professional 3D Preview (Studio Lighting, Custom Background).
+- Mobile-Friendly PWA (Installable, Offline-capable).
+- Export/Load JSON with integrated Build Sheet.

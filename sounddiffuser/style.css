@@ -199,9 +199,52 @@ button.secondary:hover:not(:disabled) { background-color: #219150; }
 
 .color-config-row { grid-template-columns: 40px 1fr 40px; }
 
-#add-block-config, #add-color-config, #add-wave-layer, #add-ripple-layer, #add-color-wave-layer, #add-color-ripple-layer {
-    width: 100%;
-    margin-bottom: 1rem;
-    background-color: #fff;
-    border: 1px dashed #adb5bd;
+#mobile-tabs {
+    display: none;
+    background: var(--primary-color);
+    padding: 0.5rem;
+    gap: 0.5rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    z-index: 10;
 }
+
+.tab-btn {
+    flex: 1;
+    padding: 0.6rem;
+    font-size: 0.9rem;
+    background: rgba(255,255,255,0.1);
+    color: white;
+    border: 1px solid rgba(255,255,255,0.2);
+}
+
+.tab-btn.active {
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+}
+
+@media (max-width: 768px) {
+    #mobile-tabs {
+        display: flex;
+    }
+
+    main {
+        grid-template-columns: 1fr;
+        height: calc(100vh - 120px); /* Adjust for header + tabs */
+    }
+
+    #preview-container, #configuration-panel {
+        display: none;
+        height: 100%;
+        border: none;
+    }
+
+    #preview-container.mobile-active, 
+    #configuration-panel.mobile-active {
+        display: flex;
+    }
+
+    #configuration-panel {
+        padding: 1rem;
+    }
+}
+
