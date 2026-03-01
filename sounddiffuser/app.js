@@ -101,17 +101,29 @@ class DiffuserConfigurator {
     }
 
     initUI() {
-        // ... rest of initUI remains the same, except AR buttons
-        
+        // ... (Include shared dimension listeners here if not already present)
+
         const setupARButton = (btnId) => {
             const btn = document.getElementById(btnId);
             if (!btn) return;
             
-            // Check for AR support
-            if (navigator.xr) {
-                navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
-                    if (supported) {
-                        btn.addEventListener('click', () => {
+            // Initial check to grey out the button if we ALREADY know XR isn't there
+            if (!navigator.xr) {
+                btn.classList.add('disabled-look');
+            } else {
+                navigator.xr.isSessionSupported('immersive-ar').then(supported => {
+                    if (!supported) btn.classList.add('disabled-look');
+                });
+            }
+
+            btn.addEventListener('click', (e) => {
+                // Prevent event bubbling if one button is inside another or triggering multiple listeners
+                e.preventDefault();
+                e.stopPropagation();
+
+                if (navigator.xr) {
+                    navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
+                        if (supported) {
                             this.renderer.xr.setReferenceSpaceType('local');
                             navigator.xr.requestSession('immersive-ar', {
                                 optionalFeatures: ['dom-overlay'],
@@ -119,17 +131,17 @@ class DiffuserConfigurator {
                             }).then((session) => {
                                 this.renderer.xr.setSession(session);
                             });
-                        });
-                    } else {
-                        btn.disabled = true;
-                        btn.title = "AR not supported on this device/browser";
-                    }
-                });
-            } else {
-                btn.style.display = 'none';
-            }
+                        } else {
+                            alert("AR is not supported on this device or browser.\n\nNote: iOS requires a WebXR-compatible browser (like 'WebXR Viewer') or ensuring you are on a secure HTTPS connection.");
+                        }
+                    });
+                } else {
+                    alert("WebXR is not available.\n\nTo use AR, please ensure you are using a modern browser and a secure (HTTPS) connection.");
+                }
+            });
         };
 
+        // Note: btn-ar-mobile is just a tab button that triggers the same logic
         setupARButton('btn-ar');
         setupARButton('btn-ar-mobile');
 
