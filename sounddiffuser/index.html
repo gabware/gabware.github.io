@@ -101,21 +101,46 @@
 
             <div class="control-group">
                 <h3>Appearance</h3>
-                <label>Background Color:
-                    <input type="color" id="bg-color-picker" value="#1a1a1a">
-                </label>
                 
+                <label>Background Color:
+                    <div class="color-swatch-wrapper">
+                        <div id="bg-color-swatch" class="color-swatch" style="background-color: #1a1a1a;">
+                            <input type="color" id="bg-color-picker" value="#1a1a1a">
+                        </div>
+                    </div>
+                </label>
+
                 <label>Color Layout Type:
                     <select id="color-layout-type">
                         <option value="random" selected>Random</option>
                         <option value="wave">Wave</option>
                         <option value="ripple">Ripple</option>
+                        <option value="paint">Paint (Manual)</option>
                     </select>
                 </label>
 
                 <label style="display: flex; align-items: center; gap: 0.5rem; margin: 0.5rem 0;">
                     <input type="checkbox" id="sync-color-layout" style="width: auto; margin: 0;"> Sync with Block Layout
                 </label>
+
+                <div class="config-card">
+                    <label>Preview Lighting</label>
+                    <div class="config-card-grid grid-3">
+                        <div><label>Intensity</label><input type="range" id="light-intensity" min="0" max="2" step="0.1" value="1.2"></div>
+                        <div><label>Angle</label><input type="range" id="light-angle" min="0" max="360" step="1" value="45"></div>
+                        <div><label>Ambient</label><input type="range" id="light-ambient" min="0" max="1" step="0.1" value="0.4"></div>
+                    </div>
+                </div>
+
+                <!-- Color Paint Settings -->
+                <div id="settings-color-paint" style="display: none;">
+                    <button id="btn-paint-mode" class="secondary" style="margin-bottom: 0.5rem;">Enable painting in 3D view</button>
+                    <label>Brush Palette:</label>
+                    <div id="brush-colors-list" style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.25rem;">
+                        <!-- Custom brush colors injected here -->
+                    </div>
+                    <button id="add-brush-color" style="width: auto; padding: 0.4rem 0.8rem; margin-top: 0.5rem; font-size: 0.8rem;">+ Add Brush</button>
+                </div>
 
                 <!-- Color Random Settings -->
                 <div id="settings-color-random">
@@ -128,14 +153,24 @@
 
                 <!-- Color Wave Settings -->
                 <div id="settings-color-wave" style="display: none;">
+                    <label>Wave Colors:</label>
+                    <div id="color-wave-palette" style="display: flex; gap: 0.2rem; flex-wrap: wrap; margin-bottom: 0.5rem;"></div>
+                    <button id="add-color-wave-palette-color" style="width: auto; padding: 0.3rem 0.6rem; font-size: 0.75rem; margin-bottom: 1rem;">+ Add Color</button>
+                    
+                    <label>Wave Layers:</label>
                     <div id="color-wave-layers-container"></div>
-                    <button id="add-color-wave-layer">+ Add Color Wave</button>
+                    <button id="add-color-wave-layer">+ Add Color Wave Layer</button>
                 </div>
 
                 <!-- Color Ripple Settings -->
                 <div id="settings-color-ripple" style="display: none;">
+                    <label>Ripple Colors:</label>
+                    <div id="color-ripple-palette" style="display: flex; gap: 0.2rem; flex-wrap: wrap; margin-bottom: 0.5rem;"></div>
+                    <button id="add-color-ripple-palette-color" style="width: auto; padding: 0.3rem 0.6rem; font-size: 0.75rem; margin-bottom: 1rem;">+ Add Color</button>
+
+                    <label>Ripple Layers:</label>
                     <div id="color-ripple-layers-container"></div>
-                    <button id="add-color-ripple-layer">+ Add Color Ripple</button>
+                    <button id="add-color-ripple-layer">+ Add Color Ripple Layer</button>
                 </div>
             </div>
 

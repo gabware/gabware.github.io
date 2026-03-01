@@ -1,44 +1,43 @@
 # Sound Diffuser Configurator
 
-A technical tool for designing and calculating high-precision acoustic diffusers for studios, listening rooms, and architectural spaces.
+A high-performance technical tool for designing and calculating precision acoustic diffusers for studios, listening rooms, and architectural spaces.
 
 ## 1. Project Overview
-This web application allows users to configure and design acoustic diffusers by defining overall size, block constraints, colors, and layout patterns. It provides real-time 3D visualization and exportable configuration files.
+This application balances mathematical generation with artistic control. Users can design acoustic structures using established Schroeder-inspired layouts (Skyline, Wave, Ripple) and manually refine them using an integrated 3D painting system.
 
 ## 2. Core Features
 
-### 2.1 3D Preview & Appearance
-- **Real-time Rendering:** Powered by Three.js with studio-grade lighting and soft shadows.
-- **Customizable Background:** Toggle between dark/light or custom background colors.
-- **Multi-Color Palettes:** Add and manage a list of colors that are randomly distributed across the diffuser blocks.
-- **Interactive Controls:** Rotate, zoom, and pan the model using OrbitControls.
+### 2.1 Professional 3D Visualization
+- **Real-time Rendering:** Optimized Three.js engine with material and geometry pooling for high frame rates on all devices.
+- **Studio Lighting Controls:** Customizable main light intensity, source angle, and ambient fill to verify shadow patterns.
+- **Unified Swatch UI:** Professional circular color selection system used across background, palettes, and brushes.
 
-### 2.2 Layout Patterns (Block Configuration)
-- **Overall Dimensioning:** Set the total width and height in **inches**. The grid automatically calculates the number of blocks based on the specified block size.
-- **Random Skyline:**
-  - Define custom block depths (in).
-  - Assign percentage distributions for each depth (must sum to 100%).
-  - Manually "Generate" to re-randomize the distribution.
-- **Wave:**
-  - Continuous sinusoidal wave pattern.
-  - Controls for orientation (Horizontal/Vertical), Wave Height (Amplitude), and Wave Width (Period).
-- **Ripple:**
-  - Radial wave pattern originating from a specific $(x, y)$ coordinate.
-  - Controls for origin point, Ripple Height, and Ripple Width.
+### 2.2 Advanced Layout Patterns
+- **Random Skyline:** discrete block depth management with percentage-based distribution.
+- **Multi-Layered Mixing:** Add multiple "Wave" or "Ripple" layers.
+  - **Additive Depths:** Layers sum their heights before applying min/max constraints.
+  - **Averaged Colors:** Multi-layered color patterns are averaged for smooth transitions.
+- **Precision Constraints:** All algorithmic layouts respect user-defined **Min Depth**, **Max Depth**, and **Step** increments (e.g., snapping to 1" material thickness).
 
-### 2.3 Productivity Tools
-- **Global Undo System:** Revert any configuration change using the UI button or **Ctrl+Z**.
-- **JSON Export:** Save your entire configuration (dimensions, block types, colors, and layout) to a portable JSON file.
-- **JSON Load:** [Planned/In-progress] Restore a design from a saved configuration file.
-- **AR Preview:** [Planned] Preview the diffuser on your own walls using WebAR.
+### 2.3 Artistic Paint Mode
+- **Integrated Workflow:** Paint Mode is a primary Color Layout type that allows manual override of algorithmic patterns.
+- **Smart Selection UX:** Single-click to select a brush, double-click/long-press to edit its color.
+- **Brush Management:** Create, edit, and remove custom brushes in a persistent palette.
+- **Batch Undo:** Individual strokes are batched; history is saved after 5 seconds of non-painting.
+
+### 2.4 Production & Portability
+- **Installable PWA:** Full Progressive Web App support for home-screen installation and offline access.
+- **1:1 Scale AR View:** View your design on your actual wall at real-world scale using WebXR.
+- **Comprehensive Export:** JSON output includes the full configuration and a **Build Sheet (Bill of Materials)** with exact block counts per size and color.
+- **Global Undo:** Robust `Ctrl+Z` support for every configuration change and manual edit.
 
 ## 3. Technical Specifications
-- **Units:** All measurements are in **inches**.
-- **Tech Stack:** Vanilla JS, Three.js, CSS3 (Flexbox/Grid), and HTML5.
-- **Architecture:** Modular class-based design with a central `config` state and history management.
+- **Units:** Inches (Standard).
+- **Tech Stack:** Vanilla JS, Three.js, WebXR, CSS Grid/Flexbox.
+- **Architecture:** State-driven class model with global history management.
 
 ## 4. How to Run
-Due to the use of ES Modules and Three.js, this project **must be served via a local web server**.
+Serve via a local web server to avoid CORS issues and enable PWA/AR features:
 - **Python:** `python -m http.server 8000`
-- **Node.js:** `npx serve`
-- **VS Code:** Use the "Live Server" extension.
+- **VS Code:** "Live Server" extension.
+- **Note:** AR and Installation require an **HTTPS** connection (or localhost).
