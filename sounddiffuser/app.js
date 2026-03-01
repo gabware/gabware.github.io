@@ -153,21 +153,18 @@ class DiffuserConfigurator {
             this.saveToHistory(); this.config.syncColorLayout = e.target.checked; this.generateLayout(); this.renderDiffuser();
         });
 
-        ['wave-angle', 'wave-amplitude', 'wave-frequency', 'wave-minDepth', 'wave-maxDepth', 'wave-depthStep',
-         'ripple-x', 'ripple-y', 'ripple-amplitude', 'ripple-frequency', 'ripple-minDepth', 'ripple-maxDepth', 'ripple-depthStep'].forEach(id => {
-            document.getElementById(id).addEventListener('mousedown', () => this.saveToHistory());
-            document.getElementById(id).addEventListener('input', (e) => {
-                const parts = id.split('-'); this.config[parts[0]][parts[1]] = parseFloat(e.target.value) || 0;
-                this.generateLayout(); this.renderDiffuser();
-            });
-        });
-
-        ['color-wave-angle', 'color-wave-amplitude', 'color-wave-frequency', 'color-ripple-x', 'color-ripple-y', 'color-ripple-frequency'].forEach(id => {
-            document.getElementById(id).addEventListener('mousedown', () => this.saveToHistory());
-            document.getElementById(id).addEventListener('input', (e) => {
-                const parts = id.split('-'); const section = (parts[1] === 'wave') ? 'colorWave' : 'colorRipple';
-                this.config[section][parts[parts.length - 1]] = parseFloat(e.target.value) || 0;
-                this.generateLayout(); this.renderDiffuser();
+        // Constraints Listeners
+        ['wave-minDepth', 'wave-maxDepth', 'wave-depthStep', 'ripple-minDepth', 'ripple-maxDepth', 'ripple-depthStep'].forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('mousedown', () => this.saveToHistory());
+            el.addEventListener('input', (e) => {
+                const parts = id.split('-');
+                const section = parts[0] + 'Constraints';
+                const key = parts[1];
+                this.config[section][key] = parseFloat(e.target.value) || 0;
+                this.generateLayout();
+                this.renderDiffuser();
             });
         });
 
