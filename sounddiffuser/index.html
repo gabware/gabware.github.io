@@ -31,7 +31,6 @@
 
     <main>
         <section id="preview-container" class="mobile-active">
-            <!-- Three.js Canvas will be injected here -->
             <div id="three-canvas-wrapper"></div>
         </section>
 
@@ -55,16 +54,15 @@
                 <label>Layout Type:
                     <select id="layout-type">
                         <option value="random" selected>Random Skyline</option>
-                        <option value="wave">Wave</option>
-                        <option value="ripple">Ripple</option>
+                        <option value="wave">Simple Wave</option>
+                        <option value="ripple">Simple Ripple</option>
+                        <option value="parametric">Parametric Waves</option>
                     </select>
                 </label>
 
                 <!-- Random Skyline Settings -->
                 <div id="settings-random">
-                    <div id="block-configs-container">
-                        <!-- Dynamic block configs will be added here -->
-                    </div>
+                    <div id="block-configs-container"></div>
                     <button id="add-block-config">+ Add Block Type</button>
                     <div class="layout-actions">
                         <button id="randomize-layout" class="primary">Generate</button>
@@ -95,6 +93,31 @@
                             <div><label>Max Depth</label><input type="number" id="ripple-maxDepth" value="5" step="0.25"></div>
                             <div><label>Step</label><input type="number" id="ripple-depthStep" value="1" step="0.125"></div>
                         </div>
+                    </div>
+                </div>
+
+                <!-- Parametric Settings -->
+                <div id="settings-parametric" style="display: none;">
+                    <div class="config-card">
+                        <div class="config-card-grid grid-3">
+                            <div><label>Orientation</label>
+                                <select id="parametric-orientation">
+                                    <option value="vertical" selected>Vertical</option>
+                                    <option value="horizontal">Horizontal</option>
+                                </select>
+                            </div>
+                            <div><label>Spacing (in)</label><input type="number" id="parametric-spacing" value="0" step="0.1" min="0"></div>
+                            <div></div>
+                        </div>
+                    </div>
+
+                    <label>Wave Components:</label>
+                    <div id="parametric-layers-container"></div>
+                    <button id="add-parametric-wave-layer">+ Add Wave Component</button>
+
+                    <div class="config-card">
+                        <label>Noise Amount: <span id="noise-amount-val">0</span></label>
+                        <input type="range" id="parametric-noise-slider" min="0" max="1" step="0.05" value="0">
                     </div>
                 </div>
             </div>
@@ -132,42 +155,35 @@
                     </div>
                 </div>
 
-                <!-- Color Paint Settings -->
                 <div id="settings-color-paint" style="display: none;">
-                    <button id="btn-paint-mode" class="secondary" style="margin-bottom: 0.5rem;">Enable painting in 3D view</button>
-                    <label>Brush Palette:</label>
-                    <div id="brush-colors-list" style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.25rem;">
-                        <!-- Custom brush colors injected here -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 0.5rem;">
+                        <button id="btn-paint-mode" class="secondary">Enable painting</button>
+                        <button id="btn-paint-all">Paint All</button>
                     </div>
+                    <label>Brush Palette:</label>
+                    <div id="brush-colors-list" style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.25rem;"></div>
                     <button id="add-brush-color" style="width: auto; padding: 0.4rem 0.8rem; margin-top: 0.5rem; font-size: 0.8rem;">+ Add Brush</button>
                 </div>
 
-                <!-- Color Random Settings -->
                 <div id="settings-color-random">
-                    <div id="color-configs-container">
-                        <!-- Dynamic color rows will be added here -->
-                    </div>
+                    <div id="color-configs-container"></div>
                     <button id="add-color-config">+ Add Color Type</button>
                     <div id="color-validation-message" style="color: red; font-size: 0.8rem; margin-top: 0.5rem;"></div>
                 </div>
 
-                <!-- Color Wave Settings -->
                 <div id="settings-color-wave" style="display: none;">
                     <label>Wave Colors:</label>
                     <div id="color-wave-palette" style="display: flex; gap: 0.2rem; flex-wrap: wrap; margin-bottom: 0.5rem;"></div>
                     <button id="add-color-wave-palette-color" style="width: auto; padding: 0.3rem 0.6rem; font-size: 0.75rem; margin-bottom: 1rem;">+ Add Color</button>
-                    
                     <label>Wave Layers:</label>
                     <div id="color-wave-layers-container"></div>
                     <button id="add-color-wave-layer">+ Add Color Wave Layer</button>
                 </div>
 
-                <!-- Color Ripple Settings -->
                 <div id="settings-color-ripple" style="display: none;">
                     <label>Ripple Colors:</label>
                     <div id="color-ripple-palette" style="display: flex; gap: 0.2rem; flex-wrap: wrap; margin-bottom: 0.5rem;"></div>
                     <button id="add-color-ripple-palette-color" style="width: auto; padding: 0.3rem 0.6rem; font-size: 0.75rem; margin-bottom: 1rem;">+ Add Color</button>
-
                     <label>Ripple Layers:</label>
                     <div id="color-ripple-layers-container"></div>
                     <button id="add-color-ripple-layer">+ Add Color Ripple Layer</button>

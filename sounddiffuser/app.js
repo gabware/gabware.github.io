@@ -30,6 +30,13 @@ class DiffuserConfigurator {
             rippleLayers: [{ x: 0.5, y: 0.5, amplitude: 4, frequency: 10 }],
             rippleConstraints: { minDepth: 1, maxDepth: 5, depthStep: 1 },
             
+            parametric: {
+                orientation: 'vertical',
+                spacing: 0,
+                layers: [{ amp: 4, freq: 2, phase: 0.5 }],
+                noiseAmount: 0
+            },
+
             colorLayoutType: 'random',
             syncColorLayout: false,
             colorTypes: [{ color: '#000080', percentage: 40 }, { color: '#add8e6', percentage: 30 }, { color: '#40e0d0', percentage: 30 }],
@@ -76,41 +83,25 @@ class DiffuserConfigurator {
         container.appendChild(this.renderer.domElement);
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
-
         this.ambientLight = new THREE.AmbientLight(0xffffff, this.config.lighting.ambient);
         this.scene.add(this.ambientLight);
-
         this.mainLight = new THREE.DirectionalLight(0xffffff, this.config.lighting.intensity);
         this.mainLight.castShadow = true;
-        
-        // Optimize Shadow Frustum to cover full diffuser (max 100x100 range)
-        this.mainLight.shadow.camera.left = -60;
-        this.mainLight.shadow.camera.right = 60;
-        this.mainLight.shadow.camera.top = 60;
-        this.mainLight.shadow.camera.bottom = -60;
-        this.mainLight.shadow.mapSize.width = 2048;
-        this.mainLight.shadow.mapSize.height = 2048;
-        
+        this.mainLight.shadow.camera.left = -100; this.mainLight.shadow.camera.right = 100;
+        this.mainLight.shadow.camera.top = 100; this.mainLight.shadow.camera.bottom = -100;
+        this.mainLight.shadow.mapSize.set(2048, 2048);
         this.scene.add(this.mainLight);
         this.updateLightPosition();
-
         this.scene.add(this.blocks);
         window.addEventListener('resize', () => this.onWindowResize());
 
         this.renderer.xr.addEventListener('sessionstart', () => {
-            this.isAR = true;
-            this.scene.background = null;
-            this.blocks.scale.setScalar(0.0254);
-            this.blocks.position.set(0, 0, -1.5);
-            this.blocks.rotation.x = Math.PI / 2;
+            this.isAR = true; this.scene.background = null;
+            this.blocks.scale.setScalar(0.0254); this.blocks.position.set(0, 0, -1.5); this.blocks.rotation.x = Math.PI / 2;
         });
-
         this.renderer.xr.addEventListener('sessionend', () => {
-            this.isAR = false;
-            this.scene.background = new THREE.Color(this.config.backgroundColor);
-            this.blocks.scale.setScalar(1);
-            this.blocks.position.set(0, 0, 0);
-            this.blocks.rotation.x = 0;
+            this.isAR = false; this.scene.background = new THREE.Color(this.config.backgroundColor);
+            this.blocks.scale.setScalar(1); this.blocks.position.set(0, 0, 0); this.blocks.rotation.x = 0;
         });
     }
 
@@ -120,7 +111,7 @@ class DiffuserConfigurator {
     }
 
     getMaterial(color) {
-        const key = color.toLowerCase();
+        const key = (color || '#ffffff').toLowerCase();
         if (!this.materialCache[key]) {
             this.materialCache[key] = new THREE.MeshStandardMaterial({ color: key, roughness: 0.7, metalness: 0.1 });
         }
@@ -138,18 +129,18 @@ class DiffuserConfigurator {
         const triggerEdit = () => { input.click(); };
         if (immediateEdit) swatch.addEventListener('click', triggerEdit);
         else {
-            input.style.pointerEvents = 'none'; let longPressTimer;
+            input.style.pointerEvents = 'none'; let timer;
             swatch.addEventListener('click', (e) => { if (e.detail === 1) triggerSelect(); });
             swatch.addEventListener('dblclick', triggerEdit);
-            swatch.addEventListener('touchstart', () => { longPressTimer = setTimeout(() => { triggerEdit(); longPressTimer = null; }, 600); }, { passive: true });
-            swatch.addEventListener('touchend', () => { if (longPressTimer) { clearTimeout(longPressTimer); triggerSelect(); } }, { passive: true });
+            swatch.addEventListener('touchstart', () => { timer = setTimeout(() => { triggerEdit(); timer = null; }, 600); }, { passive: true });
+            swatch.addEventListener('touchend', () => { if (timer) { clearTimeout(timer); triggerSelect(); } }, { passive: true });
         }
         swatch.appendChild(input); wrapper.appendChild(swatch);
         if (onRemove) {
-            const removeBtn = document.createElement('div'); removeBtn.className = 'swatch-remove-btn'; removeBtn.innerHTML = '×';
-            removeBtn.addEventListener('click', (e) => { e.stopPropagation(); onRemove(); }); wrapper.appendChild(removeBtn);
+            const btn = document.createElement('div'); btn.className = 'swatch-remove-btn'; btn.innerHTML = '×';
+            btn.addEventListener('click', (e) => { e.stopPropagation(); onRemove(); }); wrapper.appendChild(btn);
         }
-        return { wrapper, input, swatch };
+        return { wrapper, swatch };
     }
 
     initPainting() {
@@ -167,9 +158,9 @@ class DiffuserConfigurator {
             if (intersects.length > 0) {
                 const intersect = intersects.find(i => i.object.type === 'Mesh');
                 if (intersect) {
-                    const mesh = intersect.object; const idx = mesh.userData.index; const targetColor = this.brushColor.toLowerCase();
-                    if (idx !== undefined && (this.config.colorLayout[idx] || '').toLowerCase() !== targetColor) {
-                        this.config.colorLayout[idx] = targetColor; mesh.material = this.getMaterial(targetColor); this.resetPaintTimer();
+                    const mesh = intersect.object; const idx = mesh.userData.index; const color = this.brushColor.toLowerCase();
+                    if (idx !== undefined && (this.config.colorLayout[idx] || '').toLowerCase() !== color) {
+                        this.config.colorLayout[idx] = color; mesh.material = this.getMaterial(color); this.resetPaintTimer();
                     }
                 }
             }
@@ -195,19 +186,35 @@ class DiffuserConfigurator {
             });
         });
 
+        document.getElementById('layout-type').addEventListener('change', (e) => {
+            this.saveToHistory(); this.config.layoutType = e.target.value;
+            this.updateLayoutUI(); this.updateGrid(); this.generateLayout(); this.renderDiffuser();
+        });
+
+        // Parametric UI
+        document.getElementById('parametric-orientation').addEventListener('change', (e) => {
+            this.saveToHistory(); this.config.parametric.orientation = e.target.value;
+            this.updateGrid(); this.generateLayout(); this.renderDiffuser();
+        });
+        document.getElementById('parametric-spacing').addEventListener('input', (e) => {
+            this.config.parametric.spacing = parseFloat(e.target.value) || 0;
+            this.updateGrid(); this.generateLayout(); this.renderDiffuser();
+        });
+        document.getElementById('add-parametric-wave-layer').addEventListener('click', () => {
+            this.saveToHistory(); this.config.parametric.layers.push({ amp: 2, freq: 4, phase: 0.2 });
+            this.renderParametricLayersUI(); this.generateLayout(); this.renderDiffuser();
+        });
+        document.getElementById('parametric-noise-slider').addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            this.config.parametric.noiseAmount = val;
+            document.getElementById('noise-amount-val').textContent = val;
+            this.generateLayout(); this.renderDiffuser();
+        });
+
         // Lighting UI
-        document.getElementById('light-intensity').addEventListener('input', (e) => {
-            this.config.lighting.intensity = parseFloat(e.target.value);
-            this.mainLight.intensity = this.config.lighting.intensity;
-        });
-        document.getElementById('light-angle').addEventListener('input', (e) => {
-            this.config.lighting.angle = parseFloat(e.target.value);
-            this.updateLightPosition();
-        });
-        document.getElementById('light-ambient').addEventListener('input', (e) => {
-            this.config.lighting.ambient = parseFloat(e.target.value);
-            this.ambientLight.intensity = this.config.lighting.ambient;
-        });
+        document.getElementById('light-intensity').addEventListener('input', (e) => { this.config.lighting.intensity = parseFloat(e.target.value); this.mainLight.intensity = this.config.lighting.intensity; });
+        document.getElementById('light-angle').addEventListener('input', (e) => { this.config.lighting.angle = parseFloat(e.target.value); this.updateLightPosition(); });
+        document.getElementById('light-ambient').addEventListener('input', (e) => { this.config.lighting.ambient = parseFloat(e.target.value); this.ambientLight.intensity = this.config.lighting.ambient; });
 
         const bgPicker = document.getElementById('bg-color-picker');
         const bgSwatch = document.getElementById('bg-color-swatch');
@@ -219,33 +226,20 @@ class DiffuserConfigurator {
         btnPaintToggle.addEventListener('click', () => {
             this.isPaintEnabled = !this.isPaintEnabled;
             btnPaintToggle.classList.toggle('active', this.isPaintEnabled);
-            btnPaintToggle.textContent = this.isPaintEnabled ? 'Painting Enabled' : 'Enable painting in 3D view';
+            btnPaintToggle.textContent = this.isPaintEnabled ? 'Painting Enabled' : 'Enable painting';
+        });
+
+        document.getElementById('btn-paint-all').addEventListener('click', () => {
+            this.saveToHistory();
+            const color = this.brushColor.toLowerCase();
+            this.config.colorLayout = this.config.colorLayout.map(() => color);
+            this.renderDiffuser();
         });
 
         document.getElementById('add-brush-color').addEventListener('click', () => { this.saveToHistory(); this.config.brushPalette.push('#ffffff'); this.renderBrushColors(); });
         document.getElementById('add-color-wave-palette-color').addEventListener('click', () => { this.saveToHistory(); this.config.colorWaveColors.push('#ffffff'); this.renderPatternColors(); this.generateLayout(); this.renderDiffuser(); });
         document.getElementById('add-color-ripple-palette-color').addEventListener('click', () => { this.saveToHistory(); this.config.colorRippleColors.push('#ffffff'); this.renderPatternColors(); this.generateLayout(); this.renderDiffuser(); });
 
-        const setupARButton = (btnId) => {
-            const btn = document.getElementById(btnId); if (!btn) return;
-            if (!navigator.xr) btn.classList.add('disabled-look');
-            else navigator.xr.isSessionSupported('immersive-ar').then(s => { if(!s) btn.classList.add('disabled-look'); });
-            btn.addEventListener('click', (e) => {
-                e.preventDefault(); e.stopPropagation();
-                if (navigator.xr) {
-                    navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
-                        if (supported) {
-                            this.renderer.xr.setReferenceSpaceType('local');
-                            navigator.xr.requestSession('immersive-ar', { optionalFeatures: ['dom-overlay'], domOverlay: { root: document.body } })
-                                .then((session) => this.renderer.xr.setSession(session));
-                        } else alert("AR not supported.");
-                    });
-                } else alert("WebXR unavailable.");
-            });
-        };
-        setupARButton('btn-ar'); setupARButton('btn-ar-mobile');
-
-        document.getElementById('layout-type').addEventListener('change', (e) => { this.saveToHistory(); this.config.layoutType = e.target.value; this.updateLayoutUI(); this.generateLayout(); this.renderDiffuser(); });
         document.getElementById('color-layout-type').addEventListener('change', (e) => { 
             this.saveToHistory(); this.config.colorLayoutType = e.target.value; this.updateLayoutUI(); 
             if (this.config.colorLayoutType !== 'paint') { this.generateLayout(); this.renderDiffuser(); }
@@ -255,58 +249,58 @@ class DiffuserConfigurator {
         document.getElementById('sync-color-layout').addEventListener('change', (e) => { this.saveToHistory(); this.config.syncColorLayout = e.target.checked; this.generateLayout(); this.renderDiffuser(); });
 
         ['wave-minDepth', 'wave-maxDepth', 'wave-depthStep', 'ripple-minDepth', 'ripple-maxDepth', 'ripple-depthStep'].forEach(id => {
-            document.getElementById(id)?.addEventListener('input', (e) => {
-                const parts = id.split('-'); this.config[parts[0] + 'Constraints'][parts[1]] = parseFloat(e.target.value) || 0;
-                this.generateLayout(); this.renderDiffuser();
-            });
+            document.getElementById(id)?.addEventListener('input', (e) => { const parts = id.split('-'); this.config[parts[0] + 'Constraints'][parts[1]] = parseFloat(e.target.value) || 0; this.generateLayout(); this.renderDiffuser(); });
         });
 
         document.getElementById('add-block-config').addEventListener('click', () => { this.saveToHistory(); this.config.blockTypes.push({ depth: 1, percentage: 0 }); this.renderBlockTypesUI(); });
         document.getElementById('add-color-config').addEventListener('click', () => { this.saveToHistory(); this.config.colorTypes.push({ color: '#cccccc', percentage: 0 }); this.renderColorTypesUI(); });
-        document.getElementById('randomize-layout').addEventListener('click', () => {
-            if (this.config.layoutType === 'random' && this.config.blockTypes.reduce((s, t) => s + t.percentage, 0) !== 100) return;
-            this.saveToHistory(); this.generateLayout(); this.renderDiffuser();
-        });
-
+        document.getElementById('randomize-layout').addEventListener('click', () => { if (this.config.layoutType === 'random' && this.config.blockTypes.reduce((s, t) => s + t.percentage, 0) !== 100) return; this.saveToHistory(); this.generateLayout(); this.renderDiffuser(); });
         document.getElementById('btn-undo').addEventListener('click', () => this.undo());
         window.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); this.undo(); } });
         document.getElementById('btn-export').addEventListener('click', () => this.exportJSON());
         document.getElementById('btn-load').addEventListener('click', () => document.getElementById('input-load').click());
         document.getElementById('input-load').addEventListener('change', (e) => this.loadJSON(e));
 
-        this.updateLayoutUI(); this.renderBlockTypesUI(); this.renderColorTypesUI(); this.renderLayersUI(); this.renderPatternColors(); this.renderHistoryUI();
+        const setupAR = (id) => {
+            const btn = document.getElementById(id); if (!btn) return;
+            if (!navigator.xr) btn.classList.add('disabled-look'); else navigator.xr.isSessionSupported('immersive-ar').then(s => { if(!s) btn.classList.add('disabled-look'); });
+            btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); if (navigator.xr) { navigator.xr.isSessionSupported('immersive-ar').then(s => { if(s) { this.renderer.xr.setReferenceSpaceType('local'); navigator.xr.requestSession('immersive-ar', { optionalFeatures: ['dom-overlay'], domOverlay: { root: document.body } }).then(sess => this.renderer.xr.setSession(sess)); } else alert("AR unsupported."); }); } else alert("WebXR unavailable."); });
+        };
+        setupAR('btn-ar'); setupAR('btn-ar-mobile');
+
+        this.updateLayoutUI(); this.renderBlockTypesUI(); this.renderColorTypesUI(); this.renderLayersUI(); this.renderPatternColors(); this.renderParametricLayersUI(); this.renderHistoryUI();
+    }
+
+    renderParametricLayersUI() {
+        const container = document.getElementById('parametric-layers-container'); if (!container) return; container.innerHTML = '';
+        this.config.parametric.layers.forEach((layer, idx) => {
+            const card = document.createElement('div'); card.className = 'config-card';
+            const grid = document.createElement('div'); grid.className = 'config-card-grid grid-4';
+            grid.innerHTML = `<div><label>Amp</label><input type="number" step="0.5" value="${layer.amp}" data-key="amp"></div><div><label>Freq</label><input type="number" step="0.1" value="${layer.freq}" data-key="freq"></div><div><label>Shift</label><input type="number" step="0.1" value="${layer.phase}" data-key="phase"></div><button class="btn-delete" ${idx === 0 ? 'disabled' : ''}>×</button>`;
+            grid.querySelectorAll('input').forEach(input => { input.addEventListener('input', (e) => { layer[e.target.dataset.key] = parseFloat(e.target.value) || 0; this.generateLayout(); this.renderDiffuser(); }); });
+            grid.querySelector('.btn-delete').addEventListener('click', () => { if (idx === 0) return; this.saveToHistory(); this.config.parametric.layers.splice(idx, 1); this.renderParametricLayersUI(); this.generateLayout(); this.renderDiffuser(); });
+            card.appendChild(grid); container.appendChild(card);
+        });
     }
 
     renderBrushColors() {
-        const container = document.getElementById('brush-colors-list'); if (!container) return;
-        container.innerHTML = '';
+        const container = document.getElementById('brush-colors-list'); if (!container) return; container.innerHTML = '';
         this.config.brushPalette.forEach((color, idx) => {
-            const { wrapper, swatch } = this.createColorSwatch(color, 
-                (newColor) => { this.config.brushPalette[idx] = newColor; this.brushColor = newColor; this.renderBrushColors(); }, 
-                (selColor) => { this.brushColor = selColor; this.renderBrushColors(); }, 
-                () => { this.saveToHistory(); this.config.brushPalette.splice(idx, 1); this.renderBrushColors(); },
-                false 
-            );
-            if (this.brushColor.toLowerCase() === color.toLowerCase()) swatch.classList.add('active');
-            container.appendChild(wrapper);
+            const { wrapper, swatch } = this.createColorSwatch(color, (newColor) => { this.config.brushPalette[idx] = newColor; this.brushColor = newColor; this.renderBrushColors(); }, (selColor) => { this.brushColor = selColor; this.renderBrushColors(); }, () => { this.saveToHistory(); this.config.brushPalette.splice(idx, 1); this.renderBrushColors(); }, false);
+            if (this.brushColor.toLowerCase() === color.toLowerCase()) swatch.classList.add('active'); container.appendChild(wrapper);
         });
     }
 
     renderPatternColors() {
-        const renderPalette = (containerId, colors, configKey) => {
-            const container = document.getElementById(containerId); if (!container) return;
-            container.innerHTML = '';
+        const render = (id, colors, key) => {
+            const container = document.getElementById(id); if (!container) return; container.innerHTML = '';
             colors.forEach((color, idx) => {
-                const { wrapper } = this.createColorSwatch(color, (newColor) => {
-                    this.config[configKey][idx] = newColor; this.generateLayout(); this.renderDiffuser();
-                }, null, () => {
-                    this.saveToHistory(); this.config[configKey].splice(idx, 1); this.renderPatternColors(); this.generateLayout(); this.renderDiffuser();
-                }, true);
+                const { wrapper } = this.createColorSwatch(color, (newColor) => { this.config[key][idx] = newColor; this.generateLayout(); this.renderDiffuser(); }, null, () => { this.saveToHistory(); this.config[key].splice(idx, 1); this.renderPatternColors(); this.generateLayout(); this.renderDiffuser(); }, true);
                 container.appendChild(wrapper);
             });
         };
-        renderPalette('color-wave-palette', this.config.colorWaveColors, 'colorWaveColors');
-        renderPalette('color-ripple-palette', this.config.colorRippleColors, 'colorRippleColors');
+        render('color-wave-palette', this.config.colorWaveColors, 'colorWaveColors');
+        render('color-ripple-palette', this.config.colorRippleColors, 'colorRippleColors');
     }
 
     initMobileTabs() {
@@ -316,40 +310,35 @@ class DiffuserConfigurator {
             if (!tab.dataset.tab) return;
             tab.addEventListener('click', () => {
                 tabs.forEach(t => t.classList.remove('active')); tab.classList.add('active');
-                Object.values(sections).forEach(s => s.classList.remove('mobile-active'));
-                sections[tab.dataset.tab].classList.add('mobile-active');
+                Object.values(sections).forEach(s => s.classList.remove('mobile-active')); sections[tab.dataset.tab].classList.add('mobile-active');
                 if (tab.dataset.tab === 'preview') this.onWindowResize();
             });
         });
     }
 
     renderLayersUI() {
-        const renderLayer = (containerId, layers, type) => {
-            const container = document.getElementById(containerId); container.innerHTML = '';
+        const render = (id, layers, type) => {
+            const container = document.getElementById(id); if (!container) return; container.innerHTML = '';
             layers.forEach((layer, idx) => {
                 const card = document.createElement('div'); card.className = 'config-card';
                 const grid = document.createElement('div'); grid.className = 'config-card-grid grid-4';
-                let html = type === 'wave' ? 
-                    `<div><label>Angle</label><input type="number" value="${layer.angle}" data-key="angle"></div><div><label>Amp</label><input type="number" step="0.5" value="${layer.amplitude}" data-key="amplitude"></div><div><label>Freq</label><input type="number" value="${layer.frequency}" data-key="frequency"></div>` :
-                    `<div><label>X/Y</label><div style="display:flex;gap:2px"><input type="number" step="0.1" value="${layer.x}" data-key="x" style="width:50%"><input type="number" step="0.1" value="${layer.y}" data-key="y" style="width:50%"></div></div><div><label>Amp</label><input type="number" step="0.5" value="${layer.amplitude}" data-key="amplitude"></div><div><label>Freq</label><input type="number" value="${layer.frequency}" data-key="frequency"></div>`;
+                let html = type === 'wave' ? `<div><label>Angle</label><input type="number" value="${layer.angle}" data-key="angle"></div><div><label>Amp</label><input type="number" step="0.5" value="${layer.amplitude}" data-key="amplitude"></div><div><label>Freq</label><input type="number" value="${layer.frequency}" data-key="frequency"></div>` : `<div><label>X/Y</label><div style="display:flex;gap:2px"><input type="number" step="0.1" value="${layer.x}" data-key="x" style="width:50%"><input type="number" step="0.1" value="${layer.y}" data-key="y" style="width:50%"></div></div><div><label>Amp</label><input type="number" step="0.5" value="${layer.amplitude}" data-key="amplitude"></div><div><label>Freq</label><input type="number" value="${layer.frequency}" data-key="frequency"></div>`;
                 grid.innerHTML = html + `<button class="btn-delete">×</button>`; card.appendChild(grid);
                 grid.querySelectorAll('input').forEach(input => { input.addEventListener('input', (e) => { layer[e.target.dataset.key] = parseFloat(e.target.value) || 0; this.generateLayout(); this.renderDiffuser(); }); });
                 grid.querySelector('.btn-delete').addEventListener('click', () => { this.saveToHistory(); layers.splice(idx, 1); this.renderLayersUI(); this.generateLayout(); this.renderDiffuser(); });
                 container.appendChild(card);
             });
         };
-        renderLayer('wave-layers-container', this.config.waveLayers, 'wave');
-        renderLayer('ripple-layers-container', this.config.rippleLayers, 'ripple');
-        renderLayer('color-wave-layers-container', this.config.colorWaveLayers, 'wave');
-        renderLayer('color-ripple-layers-container', this.config.colorRippleLayers, 'ripple');
+        render('wave-layers-container', this.config.waveLayers, 'wave'); render('ripple-layers-container', this.config.rippleLayers, 'ripple');
+        render('color-wave-layers-container', this.config.colorWaveLayers, 'wave'); render('color-ripple-layers-container', this.config.colorRippleLayers, 'ripple');
     }
 
     updateLayoutUI() {
+        ['random', 'wave', 'ripple', 'parametric'].forEach(type => {
+            const el = document.getElementById(`settings-${type}`); if (el) el.style.display = (type === this.config.layoutType) ? 'flex' : 'none';
+        });
         ['random', 'wave', 'ripple', 'paint'].forEach(type => {
-            const el = document.getElementById(`settings-color-${type}`);
-            if (el) el.style.display = (type === this.config.colorLayoutType) ? 'flex' : 'none';
-            const bEl = document.getElementById(`settings-${type}`);
-            if (bEl) bEl.style.display = (type === this.config.layoutType) ? 'flex' : 'none';
+            const el = document.getElementById(`settings-color-${type}`); if (el) el.style.display = (type === this.config.colorLayoutType) ? 'flex' : 'none';
         });
         document.getElementById('layout-type').value = this.config.layoutType;
         document.getElementById('color-layout-type').value = this.config.colorLayoutType;
@@ -357,40 +346,28 @@ class DiffuserConfigurator {
     }
 
     saveToHistory() {
-        const state = JSON.stringify(this.config);
-        if (this.history.length === 0 || this.history[this.history.length - 1] !== state) {
-            this.history.push(state); if (this.history.length > 50) this.history.shift(); this.renderHistoryUI();
-        }
+        const state = JSON.stringify(this.config); if (this.history.length === 0 || this.history[this.history.length - 1] !== state) { this.history.push(state); if (this.history.length > 50) this.history.shift(); this.renderHistoryUI(); }
     }
 
     undo() {
-        if (this.history.length > 0) {
-            this.config = JSON.parse(this.history.pop()); this.syncUI(); this.updateGrid(); this.renderDiffuser(); this.renderHistoryUI();
-        }
+        if (this.history.length > 0) { this.config = JSON.parse(this.history.pop()); this.syncUI(); this.updateGrid(); this.renderDiffuser(); this.renderHistoryUI(); }
     }
 
     syncUI() {
-        document.getElementById('overall-width').value = this.config.overallWidth;
-        document.getElementById('overall-height').value = this.config.overallHeight;
+        document.getElementById('overall-width').value = this.config.overallWidth; document.getElementById('overall-height').value = this.config.overallHeight;
         document.getElementById('block-size').value = this.config.blockSize;
-        document.getElementById('bg-color-picker').value = this.config.backgroundColor;
-        document.getElementById('bg-color-swatch').style.backgroundColor = this.config.backgroundColor;
+        document.getElementById('bg-color-picker').value = this.config.backgroundColor; document.getElementById('bg-color-swatch').style.backgroundColor = this.config.backgroundColor;
         this.scene.background.set(this.config.backgroundColor);
-        ['wave', 'ripple'].forEach(s => {
-            const constraints = this.config[`${s}Constraints`];
-            if (constraints) {
-                document.getElementById(`${s}-minDepth`).value = constraints.minDepth;
-                document.getElementById(`${s}-maxDepth`).value = constraints.maxDepth;
-                document.getElementById(`${s}-depthStep`).value = constraints.depthStep;
-            }
-        });
-        this.updateLayoutUI(); this.renderBlockTypesUI(); this.renderColorTypesUI(); this.renderLayersUI(); this.renderPatternColors();
+        ['wave', 'ripple'].forEach(s => { const c = this.config[`${s}Constraints`]; if (c) { document.getElementById(`${s}-minDepth`).value = c.minDepth; document.getElementById(`${s}-maxDepth`).value = c.maxDepth; document.getElementById(`${s}-depthStep`).value = c.depthStep; } });
+        const p = this.config.parametric;
+        document.getElementById('parametric-orientation').value = p.orientation; document.getElementById('parametric-spacing').value = p.spacing;
+        document.getElementById('parametric-noise-slider').value = p.noiseAmount; document.getElementById('noise-amount-val').textContent = p.noiseAmount;
+        document.getElementById('light-intensity').value = this.config.lighting.intensity; document.getElementById('light-angle').value = this.config.lighting.angle; document.getElementById('light-ambient').value = this.config.lighting.ambient;
+        this.updateLayoutUI(); this.renderBlockTypesUI(); this.renderColorTypesUI(); this.renderLayersUI(); this.renderPatternColors(); this.renderParametricLayersUI();
         if (this.config.colorLayoutType === 'paint') this.renderBrushColors();
     }
 
-    renderHistoryUI() {
-        const btn = document.getElementById('btn-undo'); if (btn) btn.disabled = this.history.length === 0;
-    }
+    renderHistoryUI() { const btn = document.getElementById('btn-undo'); if (btn) btn.disabled = this.history.length === 0; }
 
     renderBlockTypesUI() {
         const container = document.getElementById('block-configs-container'); container.innerHTML = '';
@@ -412,14 +389,28 @@ class DiffuserConfigurator {
             const { wrapper } = this.createColorSwatch(type.color, (newColor) => { this.config.colorTypes[index].color = newColor; if (this.config.colorLayoutType !== 'paint') this.renderDiffuser(); }, null, () => { this.saveToHistory(); this.config.colorTypes.splice(index, 1); this.renderColorTypesUI(); }, true);
             const pctDiv = document.createElement('div'); pctDiv.className = 'compact-input-group'; pctDiv.innerHTML = `<input type="number" step="1" value="${type.percentage}"> %`;
             pctDiv.querySelector('input').addEventListener('input', (e) => { this.config.colorTypes[index].percentage = parseFloat(e.target.value) || 0; const total = this.config.colorTypes.reduce((s, t) => s + t.percentage, 0); document.getElementById('color-validation-message').textContent = (this.config.colorLayoutType === 'random' && !this.config.syncColorLayout && total !== 100) ? `Total: ${total}% (Must be 100%)` : ''; });
-            row.appendChild(wrapper); row.appendChild(pctDiv); row.appendChild(document.createElement('div')); // spacing
-            const delBtn = document.createElement('button'); delBtn.className = 'btn-delete'; delBtn.innerHTML = '×';
-            delBtn.addEventListener('click', () => { this.saveToHistory(); this.config.colorTypes.splice(index, 1); this.renderColorTypesUI(); });
-            row.appendChild(delBtn); container.appendChild(row);
+            row.appendChild(wrapper); row.appendChild(pctDiv); container.appendChild(row);
         });
     }
 
-    updateGrid() { this.cols = Math.floor(this.config.overallWidth / this.config.blockSize) || 1; this.rows = Math.floor(this.config.overallHeight / this.config.blockSize) || 1; }
+    updateGrid() {
+        const bs = this.config.blockSize;
+        const p = this.config.parametric;
+        if (this.config.layoutType === 'parametric') {
+            const isVert = p.orientation === 'vertical';
+            const step = bs + p.spacing;
+            if (isVert) {
+                this.cols = Math.floor(this.config.overallWidth / step) || 1;
+                this.rows = Math.floor(this.config.overallHeight / bs) || 1;
+            } else {
+                this.cols = Math.floor(this.config.overallWidth / bs) || 1;
+                this.rows = Math.floor(this.config.overallHeight / step) || 1;
+            }
+        } else {
+            this.cols = Math.floor(this.config.overallWidth / bs) || 1;
+            this.rows = Math.floor(this.config.overallHeight / bs) || 1;
+        }
+    }
 
     constrainDepth(d, constraints) {
         const { minDepth, maxDepth, depthStep } = constraints; let val = Math.min(Math.max(d, minDepth), maxDepth);
@@ -427,16 +418,18 @@ class DiffuserConfigurator {
     }
 
     generateLayout() {
-        const totalBlocks = this.cols * this.rows; let depths = [];
+        const totalElements = this.cols * this.rows;
+        let depths = [];
+        
         if (this.config.layoutType === 'random') {
-            let pool = []; this.config.blockTypes.forEach((type) => { const count = Math.round((type.percentage / 100) * totalBlocks); for (let i = 0; i < count; i++) pool.push(type.depth); });
-            while (pool.length < totalBlocks) pool.push(this.config.blockTypes[0]?.depth || 0); while (pool.length > totalBlocks) pool.pop();
+            let pool = []; this.config.blockTypes.forEach((type) => { const count = Math.round((type.percentage / 100) * totalElements); for (let i = 0; i < count; i++) pool.push(type.depth); });
+            while (pool.length < totalElements) pool.push(this.config.blockTypes[0]?.depth || 0); while (pool.length > totalElements) pool.pop();
             for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
             depths = pool;
-        } else {
+        } else if (this.config.layoutType === 'wave' || this.config.layoutType === 'ripple') {
             const layers = this.config.layoutType === 'wave' ? this.config.waveLayers : this.config.rippleLayers;
             const constraints = this.config.layoutType === 'wave' ? this.config.waveConstraints : this.config.rippleConstraints;
-            for (let i = 0; i < totalBlocks; i++) {
+            for (let i = 0; i < totalElements; i++) {
                 const col = i % this.cols; const row = Math.floor(i / this.cols); let totalAmp = 0;
                 layers.forEach(l => {
                     if (this.config.layoutType === 'wave') { const rad = (l.angle * Math.PI) / 180; const proj = col * Math.cos(rad) + row * Math.sin(rad); totalAmp += (l.amplitude / 2) * (1 + Math.sin((2 * Math.PI * proj * this.config.blockSize) / l.frequency)); }
@@ -444,38 +437,93 @@ class DiffuserConfigurator {
                 });
                 depths.push(this.constrainDepth(totalAmp, constraints));
             }
-        }
-        this.config.layout = depths;
-        if (this.config.colorLayoutType !== 'paint') {
-            let colorLayout = [];
-            if (this.config.syncColorLayout) { this.config.layout.forEach(depth => { const typeIdx = this.config.blockTypes.findIndex(t => t.depth === depth); const colorType = this.config.colorTypes[typeIdx % this.config.colorTypes.length]; colorLayout.push(colorType ? colorType.color : '#ffffff'); }); }
-            else if (this.config.colorLayoutType === 'random') {
-                let pool = []; this.config.colorTypes.forEach(type => { const count = Math.round((type.percentage / 100) * totalBlocks); for (let i = 0; i < count; i++) pool.push(type.color); });
-                while (pool.length < totalBlocks) pool.push(this.config.colorTypes[0]?.color || '#ffffff'); while (pool.length > totalBlocks) pool.pop();
-                for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
-                colorLayout = pool;
-            } else {
-                const layers = this.config.colorLayoutType === 'wave' ? this.config.colorWaveLayers : this.config.colorRippleLayers;
-                const palette = this.config.colorLayoutType === 'wave' ? this.config.colorWaveColors : this.config.colorRippleColors;
-                for (let i = 0; i < totalBlocks; i++) {
-                    const col = i % this.cols; const row = Math.floor(i / this.cols); let totalT = 0;
-                    layers.forEach(l => {
-                        if (this.config.colorLayoutType === 'wave') { const rad = (l.angle * Math.PI) / 180; const proj = col * Math.cos(rad) + row * Math.sin(rad); totalT += (0.5 + 0.5 * Math.sin((2 * Math.PI * proj * this.config.blockSize) / l.frequency + l.amplitude)); }
-                        else { const dist = Math.sqrt(Math.pow(col - l.x * this.cols, 2) + Math.pow(row - l.y * this.rows, 2)); totalT += (0.5 + 0.5 * Math.sin((2 * Math.PI * dist * this.config.blockSize) / l.frequency)); }
+        } else if (this.config.layoutType === 'parametric') {
+            const p = this.config.parametric;
+            const isVert = p.orientation === 'vertical';
+            const primarySteps = isVert ? this.rows : this.cols;
+            const shiftSteps = isVert ? this.cols : this.rows;
+
+            for (let row = 0; row < this.rows; row++) {
+                for (let col = 0; col < this.cols; col++) {
+                    const mainIdx = isVert ? row : col;
+                    const shiftIdx = isVert ? col : row;
+                    const normPos = mainIdx / (primarySteps || 1);
+                    let depth = 0;
+                    p.layers.forEach(layer => {
+                        depth += (layer.amp / 2) * (1 + Math.sin(2 * Math.PI * layer.freq * normPos + shiftIdx * layer.phase));
                     });
-                    const colorIdx = Math.floor((totalT / (layers.length || 1)) * palette.length); colorLayout.push(palette[colorIdx % palette.length] || '#ffffff');
+                    if (p.noiseAmount > 0) {
+                        const noiseVal = (Math.sin(col * 0.5 + row * 0.5) * Math.cos(col * 0.3) * 0.5) + (Math.random() * 0.2);
+                        depth += noiseVal * p.noiseAmount * 5;
+                    }
+                    depths.push(Math.max(0.25, depth));
                 }
             }
-            this.config.colorLayout = colorLayout;
+        }
+        this.config.layout = depths;
+
+        if (this.config.colorLayoutType !== 'paint') {
+            let colors = [];
+            if (this.config.syncColorLayout || this.config.layoutType === 'parametric') {
+                this.config.layout.forEach((depth, i) => {
+                    const palette = this.config.colorTypes;
+                    if (this.config.layoutType === 'parametric') {
+                        const isVert = this.config.parametric.orientation === 'vertical';
+                        const sliceIdx = isVert ? (i % this.cols) : Math.floor(i / this.cols);
+                        colors.push(palette[sliceIdx % palette.length]?.color || '#ffffff');
+                    } else {
+                        const typeIdx = this.config.blockTypes.findIndex(t => t.depth === depth);
+                        colors.push(palette[typeIdx % palette.length]?.color || '#ffffff');
+                    }
+                });
+            } else {
+                if (this.config.colorLayoutType === 'random') {
+                    let pool = []; this.config.colorTypes.forEach(type => { const count = Math.round((type.percentage / 100) * totalElements); for (let i = 0; i < count; i++) pool.push(type.color); });
+                    while (pool.length < totalElements) pool.push(this.config.colorTypes[0]?.color || '#ffffff'); while (pool.length > totalElements) pool.pop();
+                    for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+                    colors = pool;
+                } else {
+                    const layers = this.config.colorLayoutType === 'wave' ? this.config.colorWaveLayers : this.config.colorRippleLayers;
+                    const palette = this.config.colorLayoutType === 'wave' ? this.config.colorWaveColors : this.config.colorRippleColors;
+                    for (let i = 0; i < totalElements; i++) {
+                        const col = i % this.cols; const row = Math.floor(i / this.cols); let totalT = 0;
+                        layers.forEach(l => {
+                            if (this.config.colorLayoutType === 'wave') { const rad = (l.angle * Math.PI) / 180; const proj = col * Math.cos(rad) + row * Math.sin(rad); totalT += (0.5 + 0.5 * Math.sin((2 * Math.PI * proj * this.config.blockSize) / l.frequency + l.amplitude)); }
+                            else { const dist = Math.sqrt(Math.pow(col - l.x * this.cols, 2) + Math.pow(row - l.y * this.rows, 2)); totalT += (0.5 + 0.5 * Math.sin((2 * Math.PI * dist * this.config.blockSize) / l.frequency)); }
+                        });
+                        const colorIdx = Math.floor((totalT / (layers.length || 1)) * palette.length); colors.push(palette[colorIdx % palette.length] || '#ffffff');
+                    }
+                }
+            }
+            this.config.colorLayout = colors;
         }
     }
 
     renderDiffuser() {
         while(this.blocks.children.length > 0) { const child = this.blocks.children[0]; if(child.geometry && child.geometry !== this.boxGeo && child.geometry !== this.edgeGeo) child.geometry.dispose(); this.blocks.remove(child); }
-        const { blockSize, layout, colorLayout } = this.config; const actualWidth = this.cols * blockSize; const actualHeight = this.rows * blockSize;
+        const { layout, colorLayout, blockSize, layoutType, parametric } = this.config;
+        const bs = blockSize;
+        const ps = layoutType === 'parametric' ? parametric.spacing : 0;
+        const isVert = layoutType === 'parametric' && parametric.orientation === 'vertical';
+        const isHoriz = layoutType === 'parametric' && parametric.orientation === 'horizontal';
+
+        const stepX = isVert ? bs + ps : bs;
+        const stepY = isHoriz ? bs + ps : bs;
+        
+        const totalW = this.cols * stepX - (isVert ? ps : 0);
+        const totalH = this.rows * stepY - (isHoriz ? ps : 0);
+
         layout.forEach((depth, index) => {
-            const color = colorLayout[index] || '#ffffff'; const mesh = new THREE.Mesh(this.boxGeo, this.getMaterial(color));
-            mesh.scale.set(blockSize, blockSize, depth); mesh.position.set((index % this.cols) * blockSize - actualWidth / 2 + blockSize / 2, -(Math.floor(index / this.cols) * blockSize) + actualHeight / 2 - blockSize / 2, depth / 2);
+            const col = index % this.cols;
+            const row = Math.floor(index / this.cols);
+            const color = colorLayout[index] || '#ffffff';
+            const mesh = new THREE.Mesh(this.boxGeo, this.getMaterial(color));
+            mesh.scale.set(bs, bs, depth);
+            
+            const x = col * stepX - totalW / 2 + bs / 2;
+            const y = -row * stepY + totalH / 2 - bs / 2;
+            mesh.position.set(x, y, depth / 2);
+            
             mesh.userData.index = index; mesh.castShadow = true; mesh.receiveShadow = true; this.blocks.add(mesh);
             const line = new THREE.LineSegments(this.edgeGeo, new THREE.LineBasicMaterial({ color: 0x000000, opacity: 0.1, transparent: true }));
             line.scale.copy(mesh.scale); line.position.copy(mesh.position); this.blocks.add(line);
@@ -485,15 +533,15 @@ class DiffuserConfigurator {
     loadJSON(event) {
         const file = event.target.files[0]; if (!file) return;
         const reader = new FileReader(); reader.onload = (e) => {
-            try { this.saveToHistory(); const loaded = JSON.parse(e.target.result); if (loaded.blockSize) { this.config = { ...this.config, ...loaded }; this.syncUI(); this.updateGrid(); this.generateLayout(); this.renderDiffuser(); } } catch (err) { alert("Failed to load file."); }
+            try { this.saveToHistory(); const loaded = JSON.parse(e.target.result); if (loaded.overallWidth) { this.config = { ...this.config, ...loaded }; this.syncUI(); this.updateGrid(); this.generateLayout(); this.renderDiffuser(); } } catch (err) { alert("Failed to load file."); }
             event.target.value = '';
         }; reader.readAsText(file);
     }
 
     exportJSON() {
         const buildSheet = {}; this.config.layout.forEach((d, i) => { const c = this.config.colorLayout[i]; const k = `${c}_${d}in`; if (!buildSheet[k]) buildSheet[k] = { color: c, depth: d, count: 0 }; buildSheet[k].count++; });
-        const data = { ...this.config, metadata: { exportedAt: new Date().toISOString(), totalBlocks: this.config.layout.length, buildSheet: Object.values(buildSheet) } };
-        const a = document.createElement('a'); a.href = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2)); a.download = `diffuser-build-sheet-${Date.now()}.json`; a.click();
+        const data = { ...this.config, metadata: { exportedAt: new Date().toISOString(), totalElements: this.config.layout.length, buildSheet: Object.values(buildSheet) } };
+        const a = document.createElement('a'); a.href = "data:text/json;cast=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2)); a.download = `diffuser-build-sheet-${Date.now()}.json`; a.click();
     }
 
     onWindowResize() {

@@ -176,7 +176,7 @@ button.secondary:hover:not(:disabled) { background-color: #219150; }
     margin-top: 0.5rem;
 }
 
-#settings-random, #settings-wave, #settings-ripple, 
+#settings-random, #settings-wave, #settings-ripple, #settings-parametric,
 #settings-color-random, #settings-color-wave, #settings-color-ripple, #settings-color-paint {
     display: flex;
     flex-direction: column;
