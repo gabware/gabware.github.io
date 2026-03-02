@@ -8,12 +8,13 @@
     <meta name="theme-color" content="#2c3e50">
     <link rel="apple-touch-icon" href="icon.svg">
     <link rel="stylesheet" href="style.css">
-    <!-- Import map for Three.js -->
+    <!-- Import map for Three.js and JSPDF -->
     <script type="importmap">
         {
             "imports": {
                 "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+                "jspdf": "https://esm.sh/jspdf@2.5.1"
             }
         }
     </script>
@@ -127,8 +128,8 @@
                 
                 <label>Background Color:
                     <div class="color-swatch-wrapper">
-                        <div id="bg-color-swatch" class="color-swatch" style="background-color: #1a1a1a;">
-                            <input type="color" id="bg-color-picker" value="#1a1a1a">
+                        <div id="bg-color-swatch" class="color-swatch" style="background-color: #FAFAFA;">
+                            <input type="color" id="bg-color-picker" value="#FAFAFA">
                         </div>
                     </div>
                 </label>
@@ -191,6 +192,7 @@
             </div>
 
             <div class="action-buttons">
+                <button id="btn-save-pdf" class="secondary">Save Build Instructions (PDF)</button>
                 <button id="btn-export" class="primary">Export JSON</button>
                 <button id="btn-load">Load JSON</button>
                 <input type="file" id="input-load" accept=".json" style="display: none;">

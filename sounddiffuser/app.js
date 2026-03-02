@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { jsPDF } from 'jspdf';
 
 class DiffuserConfigurator {
     constructor() {
@@ -15,11 +16,13 @@ class DiffuserConfigurator {
         this.edgeGeo = new THREE.EdgesGeometry(this.boxGeo);
         this.materialCache = {};
         
+        const defaultPalette = ['#878787', '#DBDBDB', '#000000', '#F7C336'];
+
         this.config = {
             overallWidth: 48,
             overallHeight: 36,
             blockSize: 1.5,
-            backgroundColor: '#1a1a1a',
+            backgroundColor: '#FAFAFA',
             
             lighting: { intensity: 1.2, angle: 45, ambient: 0.4 },
 
@@ -39,13 +42,18 @@ class DiffuserConfigurator {
 
             colorLayoutType: 'random',
             syncColorLayout: false,
-            colorTypes: [{ color: '#000080', percentage: 40 }, { color: '#add8e6', percentage: 30 }, { color: '#40e0d0', percentage: 30 }],
+            colorTypes: [
+                { color: '#878787', percentage: 40 },
+                { color: '#DBDBDB', percentage: 30 },
+                { color: '#000000', percentage: 20 },
+                { color: '#F7C336', percentage: 10 }
+            ],
             colorWaveLayers: [{ angle: 0, amplitude: 1, frequency: 12 }],
-            colorWaveColors: ['#000080', '#ffffff'],
+            colorWaveColors: [...defaultPalette],
             colorRippleLayers: [{ x: 0.5, y: 0.5, amplitude: 1, frequency: 10 }],
-            colorRippleColors: ['#40e0d0', '#ffffff'],
+            colorRippleColors: [...defaultPalette],
             
-            brushPalette: ['#000080', '#add8e6', '#40e0d0', '#ffffff', '#000000'],
+            brushPalette: [...defaultPalette],
             
             layout: [],
             colorLayout: []
@@ -54,7 +62,7 @@ class DiffuserConfigurator {
         this.history = [];
         this.isAR = false;
         this.isPaintEnabled = false;
-        this.brushColor = '#000080';
+        this.brushColor = '#878787';
         this.isPainting = false;
         this.paintHistoryTimer = null;
 
@@ -62,6 +70,8 @@ class DiffuserConfigurator {
         this.initUI();
         this.initMobileTabs();
         this.initPainting();
+        
+        this.syncUI(); // Ensure UI matches config
         this.updateGrid();
         this.generateLayout();
         this.renderDiffuser();
@@ -122,19 +132,24 @@ class DiffuserConfigurator {
         const wrapper = document.createElement('div'); wrapper.className = 'color-swatch-wrapper';
         const swatch = document.createElement('div'); swatch.className = 'color-swatch'; swatch.style.backgroundColor = initialColor;
         const input = document.createElement('input'); input.type = 'color'; input.value = initialColor;
+        
         input.addEventListener('input', (e) => {
             const newColor = e.target.value.toLowerCase(); swatch.style.backgroundColor = newColor; if (onInput) onInput(newColor);
         });
+        
         const triggerSelect = () => { if (onSelect) onSelect(input.value.toLowerCase()); };
         const triggerEdit = () => { input.click(); };
-        if (immediateEdit) swatch.addEventListener('click', triggerEdit);
-        else {
+        
+        if (immediateEdit) {
+            swatch.addEventListener('click', triggerEdit);
+        } else {
             input.style.pointerEvents = 'none'; let timer;
             swatch.addEventListener('click', (e) => { if (e.detail === 1) triggerSelect(); });
             swatch.addEventListener('dblclick', triggerEdit);
             swatch.addEventListener('touchstart', () => { timer = setTimeout(() => { triggerEdit(); timer = null; }, 600); }, { passive: true });
             swatch.addEventListener('touchend', () => { if (timer) { clearTimeout(timer); triggerSelect(); } }, { passive: true });
         }
+        
         swatch.appendChild(input); wrapper.appendChild(swatch);
         if (onRemove) {
             const btn = document.createElement('div'); btn.className = 'swatch-remove-btn'; btn.innerHTML = '×';
@@ -198,7 +213,7 @@ class DiffuserConfigurator {
         });
         document.getElementById('parametric-spacing').addEventListener('input', (e) => {
             this.config.parametric.spacing = parseFloat(e.target.value) || 0;
-            this.updateGrid(); this.generateLayout(); this.renderDiffuser();
+            this.generateLayout(); this.renderDiffuser();
         });
         document.getElementById('add-parametric-wave-layer').addEventListener('click', () => {
             this.saveToHistory(); this.config.parametric.layers.push({ amp: 2, freq: 4, phase: 0.2 });
@@ -260,6 +275,7 @@ class DiffuserConfigurator {
         document.getElementById('btn-export').addEventListener('click', () => this.exportJSON());
         document.getElementById('btn-load').addEventListener('click', () => document.getElementById('input-load').click());
         document.getElementById('input-load').addEventListener('change', (e) => this.loadJSON(e));
+        document.getElementById('btn-save-pdf').addEventListener('click', () => this.exportPDF());
 
         const setupAR = (id) => {
             const btn = document.getElementById(id); if (!btn) return;
@@ -267,8 +283,6 @@ class DiffuserConfigurator {
             btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); if (navigator.xr) { navigator.xr.isSessionSupported('immersive-ar').then(s => { if(s) { this.renderer.xr.setReferenceSpaceType('local'); navigator.xr.requestSession('immersive-ar', { optionalFeatures: ['dom-overlay'], domOverlay: { root: document.body } }).then(sess => this.renderer.xr.setSession(sess)); } else alert("AR unsupported."); }); } else alert("WebXR unavailable."); });
         };
         setupAR('btn-ar'); setupAR('btn-ar-mobile');
-
-        this.updateLayoutUI(); this.renderBlockTypesUI(); this.renderColorTypesUI(); this.renderLayersUI(); this.renderPatternColors(); this.renderParametricLayersUI(); this.renderHistoryUI();
     }
 
     renderParametricLayersUI() {
@@ -350,7 +364,7 @@ class DiffuserConfigurator {
     }
 
     undo() {
-        if (this.history.length > 0) { this.config = JSON.parse(this.history.pop()); this.syncUI(); this.updateGrid(); this.renderDiffuser(); this.renderHistoryUI(); }
+        if (this.history.length > 0) { this.config = JSON.parse(this.history.pop()); this.syncUI(); this.updateGrid(); this.generateLayout(); this.renderDiffuser(); this.renderHistoryUI(); }
     }
 
     syncUI() {
@@ -389,27 +403,20 @@ class DiffuserConfigurator {
             const { wrapper } = this.createColorSwatch(type.color, (newColor) => { this.config.colorTypes[index].color = newColor; if (this.config.colorLayoutType !== 'paint') this.renderDiffuser(); }, null, () => { this.saveToHistory(); this.config.colorTypes.splice(index, 1); this.renderColorTypesUI(); }, true);
             const pctDiv = document.createElement('div'); pctDiv.className = 'compact-input-group'; pctDiv.innerHTML = `<input type="number" step="1" value="${type.percentage}"> %`;
             pctDiv.querySelector('input').addEventListener('input', (e) => { this.config.colorTypes[index].percentage = parseFloat(e.target.value) || 0; const total = this.config.colorTypes.reduce((s, t) => s + t.percentage, 0); document.getElementById('color-validation-message').textContent = (this.config.colorLayoutType === 'random' && !this.config.syncColorLayout && total !== 100) ? `Total: ${total}% (Must be 100%)` : ''; });
-            row.appendChild(wrapper); row.appendChild(pctDiv); container.appendChild(row);
+            row.appendChild(wrapper); row.appendChild(pctDiv);
+            const delBtn = document.createElement('button'); delBtn.className = 'btn-delete'; delBtn.innerHTML = '×';
+            delBtn.addEventListener('click', () => { this.saveToHistory(); this.config.colorTypes.splice(index, 1); this.renderColorTypesUI(); });
+            row.appendChild(delBtn); container.appendChild(row);
         });
     }
 
     updateGrid() {
-        const bs = this.config.blockSize;
-        const p = this.config.parametric;
+        const bs = this.config.blockSize; const p = this.config.parametric;
         if (this.config.layoutType === 'parametric') {
-            const isVert = p.orientation === 'vertical';
             const step = bs + p.spacing;
-            if (isVert) {
-                this.cols = Math.floor(this.config.overallWidth / step) || 1;
-                this.rows = Math.floor(this.config.overallHeight / bs) || 1;
-            } else {
-                this.cols = Math.floor(this.config.overallWidth / bs) || 1;
-                this.rows = Math.floor(this.config.overallHeight / step) || 1;
-            }
-        } else {
-            this.cols = Math.floor(this.config.overallWidth / bs) || 1;
-            this.rows = Math.floor(this.config.overallHeight / bs) || 1;
-        }
+            if (p.orientation === 'vertical') { this.cols = Math.floor(this.config.overallWidth / step) || 1; this.rows = Math.floor(this.config.overallHeight / bs) || 1; }
+            else { this.cols = Math.floor(this.config.overallWidth / bs) || 1; this.rows = Math.floor(this.config.overallHeight / step) || 1; }
+        } else { this.cols = Math.floor(this.config.overallWidth / bs) || 1; this.rows = Math.floor(this.config.overallHeight / bs) || 1; }
     }
 
     constrainDepth(d, constraints) {
@@ -418,9 +425,7 @@ class DiffuserConfigurator {
     }
 
     generateLayout() {
-        const totalElements = this.cols * this.rows;
-        let depths = [];
-        
+        const totalElements = this.cols * this.rows; let depths = [];
         if (this.config.layoutType === 'random') {
             let pool = []; this.config.blockTypes.forEach((type) => { const count = Math.round((type.percentage / 100) * totalElements); for (let i = 0; i < count; i++) pool.push(type.depth); });
             while (pool.length < totalElements) pool.push(this.config.blockTypes[0]?.depth || 0); while (pool.length > totalElements) pool.pop();
@@ -438,43 +443,26 @@ class DiffuserConfigurator {
                 depths.push(this.constrainDepth(totalAmp, constraints));
             }
         } else if (this.config.layoutType === 'parametric') {
-            const p = this.config.parametric;
-            const isVert = p.orientation === 'vertical';
-            const primarySteps = isVert ? this.rows : this.cols;
-            const shiftSteps = isVert ? this.cols : this.rows;
-
+            const p = this.config.parametric; const isVert = p.orientation === 'vertical';
+            const primarySteps = isVert ? this.rows : this.cols; const shiftSteps = isVert ? this.cols : this.rows;
             for (let row = 0; row < this.rows; row++) {
                 for (let col = 0; col < this.cols; col++) {
-                    const mainIdx = isVert ? row : col;
-                    const shiftIdx = isVert ? col : row;
+                    const mainIdx = isVert ? row : col; const shiftIdx = isVert ? col : row;
                     const normPos = mainIdx / (primarySteps || 1);
-                    let depth = 0;
-                    p.layers.forEach(layer => {
-                        depth += (layer.amp / 2) * (1 + Math.sin(2 * Math.PI * layer.freq * normPos + shiftIdx * layer.phase));
-                    });
-                    if (p.noiseAmount > 0) {
-                        const noiseVal = (Math.sin(col * 0.5 + row * 0.5) * Math.cos(col * 0.3) * 0.5) + (Math.random() * 0.2);
-                        depth += noiseVal * p.noiseAmount * 5;
-                    }
+                    let depth = 0; p.layers.forEach(l => { depth += (l.amp / 2) * (1 + Math.sin(2 * Math.PI * l.freq * normPos + shiftIdx * l.phase)); });
+                    if (p.noiseAmount > 0) depth += (Math.sin(col * 0.5 + row * 0.5) * Math.cos(col * 0.3) * 0.5 + Math.random() * 0.2) * p.noiseAmount * 5;
                     depths.push(Math.max(0.25, depth));
                 }
             }
         }
         this.config.layout = depths;
-
         if (this.config.colorLayoutType !== 'paint') {
             let colors = [];
             if (this.config.syncColorLayout || this.config.layoutType === 'parametric') {
                 this.config.layout.forEach((depth, i) => {
                     const palette = this.config.colorTypes;
-                    if (this.config.layoutType === 'parametric') {
-                        const isVert = this.config.parametric.orientation === 'vertical';
-                        const sliceIdx = isVert ? (i % this.cols) : Math.floor(i / this.cols);
-                        colors.push(palette[sliceIdx % palette.length]?.color || '#ffffff');
-                    } else {
-                        const typeIdx = this.config.blockTypes.findIndex(t => t.depth === depth);
-                        colors.push(palette[typeIdx % palette.length]?.color || '#ffffff');
-                    }
+                    if (this.config.layoutType === 'parametric') { const isVert = this.config.parametric.orientation === 'vertical'; const sliceIdx = isVert ? (i % this.cols) : Math.floor(i / this.cols); colors.push(palette[sliceIdx % palette.length]?.color || '#ffffff'); }
+                    else { const typeIdx = this.config.blockTypes.findIndex(t => t.depth === depth); colors.push(palette[typeIdx % palette.length]?.color || '#ffffff'); }
                 });
             } else {
                 if (this.config.colorLayoutType === 'random') {
@@ -502,28 +490,14 @@ class DiffuserConfigurator {
     renderDiffuser() {
         while(this.blocks.children.length > 0) { const child = this.blocks.children[0]; if(child.geometry && child.geometry !== this.boxGeo && child.geometry !== this.edgeGeo) child.geometry.dispose(); this.blocks.remove(child); }
         const { layout, colorLayout, blockSize, layoutType, parametric } = this.config;
-        const bs = blockSize;
-        const ps = layoutType === 'parametric' ? parametric.spacing : 0;
-        const isVert = layoutType === 'parametric' && parametric.orientation === 'vertical';
-        const isHoriz = layoutType === 'parametric' && parametric.orientation === 'horizontal';
-
-        const stepX = isVert ? bs + ps : bs;
-        const stepY = isHoriz ? bs + ps : bs;
-        
-        const totalW = this.cols * stepX - (isVert ? ps : 0);
-        const totalH = this.rows * stepY - (isHoriz ? ps : 0);
-
+        const bs = blockSize; const ps = layoutType === 'parametric' ? parametric.spacing : 0;
+        const isVert = layoutType === 'parametric' && parametric.orientation === 'vertical'; const isHoriz = layoutType === 'parametric' && parametric.orientation === 'horizontal';
+        const stepX = isVert ? bs + ps : bs; const stepY = isHoriz ? bs + ps : bs;
+        const totalW = this.cols * stepX - (isVert ? ps : 0); const totalH = this.rows * stepY - (isHoriz ? ps : 0);
         layout.forEach((depth, index) => {
-            const col = index % this.cols;
-            const row = Math.floor(index / this.cols);
-            const color = colorLayout[index] || '#ffffff';
+            const col = index % this.cols; const row = Math.floor(index / this.cols); const color = colorLayout[index] || '#ffffff';
             const mesh = new THREE.Mesh(this.boxGeo, this.getMaterial(color));
-            mesh.scale.set(bs, bs, depth);
-            
-            const x = col * stepX - totalW / 2 + bs / 2;
-            const y = -row * stepY + totalH / 2 - bs / 2;
-            mesh.position.set(x, y, depth / 2);
-            
+            mesh.scale.set(bs, bs, depth); mesh.position.set(col * stepX - totalW / 2 + bs / 2, -row * stepY + totalH / 2 - bs / 2, depth / 2);
             mesh.userData.index = index; mesh.castShadow = true; mesh.receiveShadow = true; this.blocks.add(mesh);
             const line = new THREE.LineSegments(this.edgeGeo, new THREE.LineBasicMaterial({ color: 0x000000, opacity: 0.1, transparent: true }));
             line.scale.copy(mesh.scale); line.position.copy(mesh.position); this.blocks.add(line);
@@ -541,7 +515,68 @@ class DiffuserConfigurator {
     exportJSON() {
         const buildSheet = {}; this.config.layout.forEach((d, i) => { const c = this.config.colorLayout[i]; const k = `${c}_${d}in`; if (!buildSheet[k]) buildSheet[k] = { color: c, depth: d, count: 0 }; buildSheet[k].count++; });
         const data = { ...this.config, metadata: { exportedAt: new Date().toISOString(), totalElements: this.config.layout.length, buildSheet: Object.values(buildSheet) } };
-        const a = document.createElement('a'); a.href = "data:text/json;cast=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2)); a.download = `diffuser-build-sheet-${Date.now()}.json`; a.click();
+        const a = document.createElement('a'); a.href = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2)); a.download = `diffuser-build-sheet-${Date.now()}.json`; a.click();
+    }
+
+    exportPDF() {
+        const doc = new jsPDF();
+        const { overallWidth, overallHeight, blockSize, layout, colorLayout, layoutType } = this.config;
+        
+        doc.setFontSize(20); doc.text("Diffuser Build Instructions", 20, 20);
+        doc.setFontSize(12); doc.text(`Date: ${new Date().toLocaleDateString()}`, 20, 30);
+        doc.text(`Overall Size: ${overallWidth}" x ${overallHeight}"`, 20, 40);
+        doc.text(`Block Size: ${blockSize}"`, 20, 50);
+        doc.text(`Layout Type: ${layoutType}`, 20, 60);
+
+        doc.setFontSize(16); doc.text("1. Cutting List (Material Prep)", 20, 80);
+        const cutList = {};
+        layout.forEach(d => { const key = `${d.toFixed(2)}"`; cutList[key] = (cutList[key] || 0) + 1; });
+        let y = 90; doc.setFontSize(11);
+        Object.entries(cutList).sort((a,b) => parseFloat(a[0]) - parseFloat(b[0])).forEach(([depth, count]) => {
+            if(y > 270) { doc.addPage(); y = 20; }
+            doc.text(`- Depth ${depth}: ${count} blocks`, 30, y); y += 7;
+        });
+
+        doc.addPage();
+        doc.setFontSize(16); doc.text("2. Painting Instructions", 20, 20);
+        const paintList = {};
+        layout.forEach((d, i) => {
+            const color = colorLayout[i] || '#FFFFFF';
+            const key = `${color}_${d.toFixed(2)}"`;
+            if(!paintList[key]) paintList[key] = { color, depth: d.toFixed(2), count: 0 };
+            paintList[key].count++;
+        });
+        y = 30; doc.setFontSize(11);
+        Object.values(paintList).sort((a,b) => a.color.localeCompare(b.color)).forEach(item => {
+            if(y > 270) { doc.addPage(); y = 20; }
+            doc.setFillColor(item.color); doc.rect(25, y-4, 5, 5, 'F');
+            doc.text(`Color ${item.color}, Depth ${item.depth}": ${item.count} blocks`, 35, y); y += 8;
+        });
+
+        doc.addPage();
+        doc.setFontSize(16); doc.text("3. Assembly Grid", 20, 20);
+        doc.setFontSize(8); doc.text("Map showing block depths (in inches). Each square is a block.", 20, 30);
+        const gridX = 20; const gridY = 40; const pageW = 170; const pageH = 220;
+        const cellS = Math.min(pageW / this.cols, pageH / this.rows);
+        for (let r = 0; r < this.rows; r++) {
+            for (let c = 0; c < this.cols; c++) {
+                const idx = r * this.cols + c; const d = layout[idx] || 0; const color = colorLayout[idx] || '#FFFFFF';
+                const x = gridX + c * cellS; const yP = gridY + r * cellS;
+                doc.setDrawColor(200); doc.rect(x, yP, cellS, cellS);
+                if(cellS > 4) {
+                    doc.setFillColor(color); doc.rect(x+0.5, yP+0.5, cellS-1, cellS-1, 'F');
+                    doc.setTextColor(this.getContrastColor(color)); doc.setFontSize(Math.max(4, cellS * 0.4));
+                    doc.text(d.toFixed(1), x + cellS/2, yP + cellS/2 + 1, { align: 'center' });
+                }
+            }
+        }
+        doc.save(`diffuser-build-guide-${Date.now()}.pdf`);
+    }
+
+    getContrastColor(hex) {
+        const hexcolor = hex.replace("#", "");
+        const r = parseInt(hexcolor.substr(0,2),16); const g = parseInt(hexcolor.substr(2,2),16); const b = parseInt(hexcolor.substr(4,2),16);
+        return ((r*299+g*587+b*114)/1000 >= 128) ? 'black' : 'white';
     }
 
     onWindowResize() {
